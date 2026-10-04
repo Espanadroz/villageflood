@@ -18,6 +18,7 @@ npm run test:db          # database integration tests (needs local Supabase)
 npm run poll             # fetch agency data once
 npm run build            # type-check + production build (also generates the service worker)
 ```
+Unit tests (`npm test`) need no `.env` (dummy Supabase values are set in `vitest.config.ts`); a deploy without the `VITE_SUPABASE_*` env vars shows a Thai configuration-error screen instead of a blank page.
 
 ## Safety rules (do not weaken)
 Expiry → "ไม่ทราบ"; conflicts show the worse status; passable claims and water levels need fresh photo/video evidence; stale agency data is never shown as current; every datum shows its age. These live in `src/core` (unit-tested) and the `submit_report` RPC (integration-tested).
