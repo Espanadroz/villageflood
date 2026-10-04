@@ -1,4 +1,4 @@
-import { classifySubmitError, classifyUploadError, classifyRpcFailure, describeSubmitError } from './submit';
+import { classifySubmitError, classifyUploadError, classifyRpcFailure, computeAgeSeconds, describeSubmitError, isTooOld } from './submit';
 
 describe('classifyUploadError', () => {
   it('treats 409 "already exists" as ok', () => {
@@ -95,5 +95,38 @@ describe('describeSubmitError', () => {
   });
   it('gives message for not_a_reporter', () => {
     expect(describeSubmitError('not_a_reporter')).toBe('ต้องส่งรายงานอย่างน้อย 1 ครั้งก่อนจึงจะยืนยันรายงานของผู้อื่นได้');
+  });
+});
+
+describe('report_too_old and expired sessions', () => {
+  it('treats report_too_old as permanent with a Thai message', () => {
+    expect(classifySubmitError('report_too_old').retryable).toBe(false);
+    expect(describeSubmitError('report_too_old')).toBe('รายงานเก่าเกินไป กรุณาถ่ายใหม่แล้วส่งอีกครั้ง');
+  });
+  it.each(['JWT expired', 'jwt expired', 'PGRST301: JWT expired'])('treats "%s" as retryable', (m) => {
+    expect(classifySubmitError(m).retryable).toBe(true);
+    expect(classifySubmitError(m, { httpStatus: 401 }).retryable).toBe(true);
+  });
+});
+
+describe('computeAgeSeconds', () => {
+  const NOW = 1_800_000_000_000;
+  it('floors the elapsed seconds', () => expect(computeAgeSeconds(NOW - 3_600_999, NOW)).toBe(3600));
+  it('is 0 for a fresh item', () => expect(computeAgeSeconds(NOW, NOW)).toBe(0));
+  it('never negative (phone clock moved back)', () => expect(computeAgeSeconds(NOW + 60_000, NOW)).toBe(0));
+  it('clamps to 24 h', () => expect(computeAgeSeconds(NOW - 5 * 86_400_000, NOW)).toBe(86400));
+  it.each([NaN, Infinity, -Infinity, undefined as unknown as number])('non-finite createdAt %s => 0', (c) => expect(computeAgeSeconds(c, NOW)).toBe(0));
+  it('non-finite now => 0', () => expect(computeAgeSeconds(NOW, NaN)).toBe(0));
+});
+
+describe('isTooOld', () => {
+  const NOW = 1_800_000_000_000; const H = 3_600_000;
+  const it2 = (kind: string, ageMs: number) => isTooOld({ createdAt: NOW - ageMs, draft: { kind } } as never, NOW);
+  it('road older than 3 h is too old', () => { expect(it2('road', 3 * H + 1000)).toBe(true); expect(it2('road', 3 * H - 60_000)).toBe(false); });
+  it('water_level older than 2 h is too old', () => { expect(it2('water_level', 2 * H + 1000)).toBe(true); expect(it2('water_level', H)).toBe(false); });
+  it('supply older than 12 h is too old', () => { expect(it2('supply', 12 * H + 1000)).toBe(true); expect(it2('supply', 11 * H)).toBe(false); });
+  it('general notes never expire client-side', () => expect(it2('general', 100 * H)).toBe(false));
+  it('an unknown age (non-finite createdAt) is treated as too old for status kinds', () => {
+    expect(isTooOld({ createdAt: NaN, draft: { kind: 'road' } } as never, NOW)).toBe(true);
   });
 });

@@ -21,7 +21,20 @@ export function ModerationList({ now, onChanged }: { now: number; onChanged?: ()
     if (action === 'delete' && !confirm('ลบรายงานนี้?')) return;
     const { error } = await supabase.rpc('moderate_report', { p_report: id, p_action: action });
     if (error) { setErrs([`ไม่สำเร็จ: ${error.message}`]); return; }
-    setErrs([]); await load(); onChanged?.();
+    const problems: string[] = [];
+    const path = rows.find((r) => r.id === id)?.media_path;
+    if (action === 'delete' && path) {
+      // best effort: the report is already soft-deleted; the public evidence file must go too
+      try {
+        const res = await supabase.storage.from('evidence').remove([path]);
+        if (res.error || !res.data || res.data.length === 0) {
+          problems.push(`ลบรายงานแล้ว แต่ลบไฟล์หลักฐานไม่สำเร็จ (${path}): ${res.error?.message ?? 'ไม่พบไฟล์หรือไม่มีสิทธิ์'}`);
+        }
+      } catch (e) {
+        problems.push(`ลบรายงานแล้ว แต่ลบไฟล์หลักฐานไม่สำเร็จ (${path}): ${(e as Error)?.message ?? String(e)}`);
+      }
+    }
+    setErrs(problems); await load(); onChanged?.();
   };
   const block = async (device: string, value: boolean) => {
     const { data, error } = await supabase.from('devices').update({ blocked: value }).eq('id', device).select('id');

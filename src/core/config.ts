@@ -6,6 +6,8 @@ export const TTL_MS = { road: 3 * HOUR, water_level: 2 * HOUR, supply: 12 * HOUR
 
 /** Agency telemetry older than this is shown as "ข้อมูลเก่า" and never used as current. */
 export const AGENCY_MAX_AGE_MS = 60 * MINUTE;
+/** Agency observations stamped further than this in the future are invalid (fail closed: stale / not stored). */
+export const MAX_FUTURE_SKEW_MS = 10 * MINUTE;
 /** TMD warnings older than this are hidden. */
 export const WARNING_MAX_AGE_MS = 48 * HOUR;
 

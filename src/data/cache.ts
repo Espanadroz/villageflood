@@ -13,6 +13,7 @@ export function parseCachedSnapshot(raw: string | null): Snapshot | null {
     if (!s.settings || typeof s.settings !== 'object') return null;
     if (typeof s.serverOffsetMs !== 'number' || !Number.isFinite(s.serverOffsetMs)) return null;
     if (typeof s.fetchedAt !== 'number' || !Number.isFinite(s.fetchedAt)) return null;
+    if (typeof s.statusTruncated !== 'boolean') return null;
     return s as Snapshot;
   } catch { return null; }
 }

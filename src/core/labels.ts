@@ -1,4 +1,4 @@
-import type { SegmentState, SupplyStatus, VehicleClass } from './types';
+import type { ReportKind, SegmentState, SupplyStatus, VehicleClass } from './types';
 import type { Trend } from './agency';
 
 export const STATUS_LABEL_TH: Record<SegmentState, string> = {
@@ -12,3 +12,4 @@ export const SUPPLY_LABEL_TH: Record<SupplyStatus | 'unknown', string> = {
   open: 'เปิด', closed: 'ปิด', out_of_stock: 'ของหมด', unreachable: 'เข้าถึงไม่ได้', unknown: 'ไม่ทราบ',
 };
 export const TREND_LABEL_TH: Record<Trend, string> = { rising: 'กำลังขึ้น', falling: 'กำลังลง', steady: 'ทรงตัว', unknown: 'ยังไม่พอประเมินแนวโน้ม' };
+export const KIND_LABEL_TH: Record<ReportKind, string> = { road: 'สภาพถนน', water_level: 'ระดับน้ำ', supply: 'จุดเสบียง', general: 'ข้อความทั่วไป' };

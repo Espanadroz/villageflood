@@ -15,7 +15,7 @@ vi.mock('../../state/SnapshotContext', () => ({
     },
   }),
 }));
-vi.mock('../../state/outbox', () => ({ outbox: { add: vi.fn(), pending: vi.fn(), failed: vi.fn(), flush: vi.fn() } }));
+vi.mock('../../state/outbox', () => ({ outbox: { add: vi.fn(), update: vi.fn(), pending: vi.fn(), failed: vi.fn(), flush: vi.fn() } }));
 vi.mock('../../state/OutboxContext', () => ({ useOutboxStatus: () => ({ pendingCount: 0, failedCount: 0, refresh: vi.fn() }) }));
 vi.mock('../../lib/useGeolocation', () => ({
   useGeolocation: vi.fn(() => ({ pos: null, error: 'denied', refresh() {} })),
@@ -23,11 +23,11 @@ vi.mock('../../lib/useGeolocation', () => ({
 }));
 vi.mock('../../lib/media', async (orig) => ({ ...(await orig<typeof import('../../lib/media')>()), compressImage: async (f: File) => new Blob([f], { type: 'image/jpeg' }) }));
 
-const box = outbox as unknown as Record<'add' | 'pending' | 'failed' | 'flush', ReturnType<typeof vi.fn>>;
+const box = outbox as unknown as Record<'add' | 'update' | 'pending' | 'failed' | 'flush', ReturnType<typeof vi.fn>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  box.add.mockResolvedValue(undefined); box.pending.mockResolvedValue([]); box.failed.mockResolvedValue([]);
+  box.add.mockResolvedValue(undefined); box.update.mockResolvedValue(true); box.pending.mockResolvedValue([]); box.failed.mockResolvedValue([]);
   box.flush.mockResolvedValue({ sent: 1, failed: 0, stoppedOnRetry: false });
   vi.mocked(geo.useGeolocation).mockReturnValue({ pos: null, error: 'denied', refresh() {} });
   vi.mocked(geo.getPositionNow).mockResolvedValue(null);
@@ -66,17 +66,47 @@ it('shows success after add + flush when the item is in neither list', async () 
   expect(box.add).toHaveBeenCalledTimes(1);
   expect(box.flush).toHaveBeenCalledTimes(1);
 });
-it('uses a fresh position at submit time', async () => {
+it('uses a fresh position at submit time (sent via update after the item is persisted)', async () => {
   vi.mocked(geo.getPositionNow).mockResolvedValue({ lat: 1, lng: 2, accuracy: 3 });
   await submitImpassable();
   await screen.findByText('ส่งรายงานแล้ว ขอบคุณครับ/ค่ะ');
-  expect(box.add.mock.calls[0]![0].draft).toMatchObject({ lat: 1, lng: 2 });
+  const added = box.add.mock.calls[0]![0];
+  expect(box.update).toHaveBeenCalledWith(added.id, { draft: { ...added.draft, lat: 1, lng: 2 }, holdUntil: 0 });
+  expect(box.update.mock.invocationCallOrder[0]!).toBeLessThan(box.flush.mock.invocationCallOrder[0]!);
 });
 it('falls back to the last hook position', async () => {
   vi.mocked(geo.useGeolocation).mockReturnValue({ pos: { lat: 9, lng: 8, accuracy: 1 }, error: null, refresh() {} });
   await submitImpassable();
   await screen.findByText('ส่งรายงานแล้ว ขอบคุณครับ/ค่ะ');
-  expect(box.add.mock.calls[0]![0].draft).toMatchObject({ lat: 9, lng: 8 });
+  expect(box.update.mock.calls[0]![1].draft).toMatchObject({ lat: 9, lng: 8 });
+});
+it('persists the report (held) BEFORE waiting for the location fix', async () => {
+  let resolvePos!: (p: { lat: number; lng: number; accuracy: number } | null) => void;
+  vi.mocked(geo.getPositionNow).mockImplementation(() => new Promise((r) => { resolvePos = r; }));
+  const before = Date.now();
+  await submitImpassable();
+  await waitFor(() => expect(box.add).toHaveBeenCalledTimes(1));
+  const added = box.add.mock.calls[0]![0];
+  expect(added.holdUntil).toBeGreaterThanOrEqual(before + 8000);
+  expect(added.createdAt).toBeGreaterThanOrEqual(before);
+  expect(added.uploadKey).toMatch(/^[0-9a-f-]{36}$/);
+  expect(added.uploadKey).not.toBe(added.draft.deviceId);
+  expect(box.update).not.toHaveBeenCalled();
+  expect(box.flush).not.toHaveBeenCalled();
+  resolvePos({ lat: 5, lng: 6, accuracy: 1 });
+  await screen.findByText('ส่งรายงานแล้ว ขอบคุณครับ/ค่ะ');
+  expect(box.update.mock.calls[0]![1]).toEqual({ draft: { ...added.draft, lat: 5, lng: 6 }, holdUntil: 0 });
+});
+it('still releases the hold and flushes when no position is available', async () => {
+  await submitImpassable();
+  await screen.findByText('ส่งรายงานแล้ว ขอบคุณครับ/ค่ะ');
+  expect(box.update.mock.calls[0]![1]).toMatchObject({ draft: { lat: null, lng: null }, holdUntil: 0 });
+});
+it('treats the report as saved when update rejects (the held item is sent later)', async () => {
+  box.update.mockRejectedValue(new Error('idb'));
+  box.pending.mockImplementation(async () => [{ id: box.add.mock.calls[0]![0].id }]);
+  await submitImpassable();
+  expect(await screen.findByText(SAVED)).toBeInTheDocument();
 });
 it('shows an error, clears busy and keeps the form when outbox.add rejects', async () => {
   box.add.mockRejectedValue(new Error('idb'));

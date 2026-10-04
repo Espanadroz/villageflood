@@ -3,7 +3,7 @@ import { settledOrEmpty } from './settled';
 
 const good = {
   segments: [], marks: [], places: [], destinations: [], routes: [], reports: [], feed: [], latest: [], recent: [], warnings: [], incidents: [],
-  settings: {}, serverOffsetMs: -5, fetchedAt: 123,
+  settings: {}, serverOffsetMs: -5, fetchedAt: 123, statusTruncated: false,
 };
 const wrap = (o: unknown) => JSON.stringify(o);
 
@@ -23,6 +23,12 @@ describe('parseCachedSnapshot', () => {
     expect(parseCachedSnapshot(wrap({ v: 1, snapshot: { ...good, serverOffsetMs: null } }))).toBeNull();
     expect(parseCachedSnapshot(wrap({ v: 1, snapshot: { ...good, fetchedAt: 'x' } }))).toBeNull();
     expect(parseCachedSnapshot(wrap({ v: 1, snapshot: { ...good, settings: null } }))).toBeNull();
+  });
+  it('requires a boolean statusTruncated (fail closed on old/corrupt caches)', () => {
+    const { statusTruncated, ...noFlag } = good;
+    expect(parseCachedSnapshot(wrap({ v: 1, snapshot: noFlag }))).toBeNull();
+    expect(parseCachedSnapshot(wrap({ v: 1, snapshot: { ...good, statusTruncated: 'no' } }))).toBeNull();
+    expect(parseCachedSnapshot(wrap({ v: 1, snapshot: { ...good, statusTruncated: true } }))!.statusTruncated).toBe(true);
   });
 });
 

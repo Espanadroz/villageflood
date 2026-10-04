@@ -1,4 +1,4 @@
-import { HOUR, MINUTE } from './config';
+import { HOUR, MAX_FUTURE_SKEW_MS, MINUTE } from './config';
 
 export function freshness(observedAt: number, now: number, maxAgeMs: number) {
   if (!Number.isFinite(observedAt) || !Number.isFinite(now)) {
@@ -7,6 +7,8 @@ export function freshness(observedAt: number, now: number, maxAgeMs: number) {
   if (!Number.isFinite(maxAgeMs) && maxAgeMs !== Number.POSITIVE_INFINITY) {
     return { ageMs: Number.POSITIVE_INFINITY, stale: true };
   }
+  // a timestamp far in the future is a broken clock or feed, never "fresh"
+  if (observedAt - now > MAX_FUTURE_SKEW_MS) return { ageMs: Number.POSITIVE_INFINITY, stale: true };
   const ageMs = Math.max(0, now - observedAt);
   return { ageMs, stale: ageMs > maxAgeMs };
 }

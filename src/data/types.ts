@@ -30,4 +30,6 @@ export interface Snapshot {
   settings: AppSettings; reports: Report[]; feed: FeedItem[];
   latest: AgencyReading[]; recent: AgencyReading[]; warnings: WarningRow[]; incidents: IncidentRow[];
   serverOffsetMs: number; fetchedAt: number;
+  /** True when the status-row fetch may be incomplete (row limit reached / API cap): show a warning banner. */
+  statusTruncated: boolean;
 }

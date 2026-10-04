@@ -6,10 +6,12 @@ import { agencyView, committeeNote, visibleWarnings } from '../../state/agencyVi
 import { derive } from '../../state/derive';
 import { useData } from '../../state/SnapshotContext';
 import { AgeLabel } from '../components/AgeLabel';
+import { TruncatedBanner } from '../components/TruncatedBanner';
 import { FeedItemCard } from '../components/FeedItemCard';
 import { GaugeCard } from '../components/GaugeCard';
 import { RainCard } from '../components/RainCard';
 import { WarningList } from '../components/WarningList';
+import { WaterMarksCard } from '../components/WaterMarksCard';
 
 export function HomePage() {
   const { snapshot: s, now } = useData();
@@ -28,6 +30,7 @@ export function HomePage() {
   return (
     <div className="page">
       <h1>พอร์ทัลน้ำท่วมหมู่บ้าน</h1>
+      <TruncatedBanner truncated={snap.statusTruncated !== false} />
 
       <section className="card">
         <strong>กรรมการหมู่บ้านแจ้ง</strong>
@@ -45,6 +48,7 @@ export function HomePage() {
       {a.others.map((g) => <GaugeCard key={g.stationId} g={g} now={now} maxAgeMs={maxAge} />)}
       <RainCard rain={a.rain} now={now} maxAgeMs={maxAge} />
       <WarningList warnings={visibleWarnings(snap, now)} now={now} />
+      <WaterMarksCard marks={snap.marks} states={d.markStates} now={now} />
 
       <h2>สรุปถนน <Link to="/map" style={{ fontSize: 14 }}>ดูแผนที่</Link></h2>
       <p>{(Object.keys(counts) as SegmentState[]).filter((k) => counts[k]).map((k) => `${STATUS_LABEL_TH[k]} ${counts[k]}`).join(' · ') || 'ยังไม่มีช่วงถนนในระบบ'}</p>

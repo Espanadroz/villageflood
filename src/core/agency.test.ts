@@ -15,6 +15,9 @@ describe('freshness', () => {
   it('returns stale true if observedAt is undefined', () => expect(freshness(undefined as any, NOW, HOUR)).toEqual({ ageMs: Number.POSITIVE_INFINITY, stale: true }));
   it('returns stale true if now is undefined', () => expect(freshness(NOW, undefined as any, HOUR)).toEqual({ ageMs: Number.POSITIVE_INFINITY, stale: true }));
   it('returns stale true if maxAgeMs is undefined', () => expect(freshness(NOW - 10 * MINUTE, NOW, undefined as any)).toEqual({ ageMs: Number.POSITIVE_INFINITY, stale: true }));
+  it('tolerates small future skew (10 min) as age 0, fresh', () => expect(freshness(NOW + 10 * MINUTE, NOW, HOUR)).toEqual({ ageMs: 0, stale: false }));
+  it('treats an observation more than 10 min in the future as invalid => stale', () => expect(freshness(NOW + 10 * MINUTE + 1, NOW, HOUR)).toEqual({ ageMs: Number.POSITIVE_INFINITY, stale: true }));
+  it('future guard also applies with no max age', () => expect(freshness(NOW + HOUR, NOW, Number.POSITIVE_INFINITY).stale).toBe(true));
   it('allows POSITIVE_INFINITY maxAge to mean no limit', () => expect(freshness(NOW - 1000 * HOUR, NOW, Number.POSITIVE_INFINITY)).toEqual({ ageMs: 1000 * HOUR, stale: false }));
   it('returns stale true if POSITIVE_INFINITY maxAge with finite observedAt still never returns fresh', () => expect(freshness(NOW - 1000 * HOUR, NOW, Number.POSITIVE_INFINITY)).toEqual({ ageMs: 1000 * HOUR, stale: false }));
 });

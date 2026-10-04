@@ -3,6 +3,7 @@ import { fetchSnapshot } from '../data/queries';
 import type { Snapshot } from '../data/types';
 import { readCache, writeCache } from '../data/cache';
 import { effectiveNow } from '../data/clock';
+import { createLatestGate, FETCH_TIMEOUT_MS, withTimeout } from './snapshotLoad';
 
 
 interface Ctx { snapshot: Snapshot | null; error: Error | null; loading: boolean; reload(): void; now: number }
@@ -15,10 +16,18 @@ export function SnapshotProvider({ children, refreshMs = 60_000 }: { children: R
   const verified = useRef(false);
   const [tick, setTick] = useState(Date.now());
 
+  const gate = useRef(createLatestGate());
+
+  // Overlapping loads (interval, online, visibility): never let an older response overwrite a newer one.
   const load = useCallback(async () => {
-    try { const s = await fetchSnapshot(); verified.current = true; setSnapshot(s); setError(null); writeCache(s); }
-    catch (e) { setError(e as Error); }
-    finally { setLoading(false); }
+    const seq = gate.current.begin();
+    try {
+      const s = await withTimeout(fetchSnapshot(), FETCH_TIMEOUT_MS);
+      if (!gate.current.shouldApply(seq)) return;
+      verified.current = true; setSnapshot(s); setError(null); writeCache(s);
+    } catch (e) {
+      if (gate.current.shouldApply(seq)) setError(e as Error);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {

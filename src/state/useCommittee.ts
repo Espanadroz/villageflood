@@ -31,7 +31,7 @@ export function useCommittee() {
 
   return {
     loading, email, isCommittee,
-    signIn: async (addr: string) => { const { error } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: `${location.origin}/admin` } }); if (error) throw error; },
+    signIn: async (addr: string) => { const { error } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: `${location.origin}/admin`, shouldCreateUser: false } }); if (error) throw error; },
     signOut: async () => { await supabase.auth.signOut(); },
   };
 }

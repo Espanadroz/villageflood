@@ -13,13 +13,15 @@ const RoutesPage = lazyRetry(() => import('./pages/RoutesPage').then((m) => ({ d
 const AdminPage = lazyRetry(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
 
 import { Disclaimer } from './components/Disclaimer';
+import { OutboxBanner } from './components/OutboxBanner';
 import type { Snapshot } from '../data/types';
 
 interface GateProps { snapshot: Snapshot | null; loading: boolean; error: Error | null; reload(): void; children: React.ReactNode }
 
 export function GateView({ snapshot, loading, error, reload, children }: GateProps) {
-  if (!snapshot && loading) return <div className="page"><p>กำลังโหลดข้อมูล…</p><Disclaimer /></div>;
-  if (!snapshot) return <div className="page"><p>โหลดข้อมูลไม่ได้ ({error?.message})</p><button onClick={reload}>ลองใหม่</button><Disclaimer /></div>;
+  // the outbox banner is shown here too, so queued/failed reports are never hidden behind a loading or error screen
+  if (!snapshot && loading) return <div className="page"><OutboxBanner /><p>กำลังโหลดข้อมูล…</p><Disclaimer /></div>;
+  if (!snapshot) return <div className="page"><OutboxBanner /><p>โหลดข้อมูลไม่ได้ ({error?.message})</p><button onClick={reload}>ลองใหม่</button><Disclaimer /></div>;
   return <>{children}</>;
 }
 

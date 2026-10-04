@@ -2,8 +2,10 @@ import { createOutbox } from './outbox';
 import { memoryKV } from './kv';
 import { SubmitError, type OutboxItem } from './submit';
 
+// Small createdAt values (< 1000) are ordering offsets from the test start, so these items stay within the TTL.
+const BASE = Date.now();
 const item = (id: string, createdAt: number): OutboxItem => ({
-  id, createdAt, attempts: 0, blob: null, mediaType: null,
+  id, createdAt: createdAt < 1000 ? BASE + createdAt : createdAt, attempts: 0, blob: null, mediaType: null,
   draft: { deviceId: 'd', nickname: 'n', kind: 'road', targetId: 's', value: 'impassable', lat: null, lng: null, note: null },
 });
 
@@ -208,4 +210,78 @@ it('(f) retryable pass with dirty set does not loop again', async () => {
   const r = await p1;
   expect(sendCalls).toBe(1);
   expect(r).toEqual({ sent: 0, failed: 0, stoppedOnRetry: true });
+});
+
+describe('observation age and location hold', () => {
+  const H = 3_600_000;
+  it('moves an item older than its kind TTL to failed as report_too_old without sending it', async () => {
+    const sent: string[] = [];
+    const now = 10 * 24 * H;
+    const box = createOutbox({ store: memoryKV(), send: async (i) => { sent.push(i.id); }, now: () => now });
+    await box.add(item('old', now - 3 * H - 1000));
+    await box.add(item('fresh', now - H));
+    expect(await box.flush()).toEqual({ sent: 1, failed: 1, stoppedOnRetry: false });
+    expect(sent).toEqual(['fresh']);
+    const failed = await box.failed();
+    expect(failed.map((f) => [f.item.id, f.reason])).toEqual([['old', 'report_too_old']]);
+  });
+  it('uses the per-kind TTL (water 2 h, supply 12 h, general never)', async () => {
+    const now = 10 * 24 * H;
+    const box = createOutbox({ store: memoryKV(), send: async () => {}, now: () => now });
+    const k = (id: string, kind: OutboxItem['draft']['kind'], age: number) => ({ ...item(id, now - age), draft: { ...item(id, 0).draft, kind } });
+    await box.add(k('w', 'water_level', 2 * H + 1000));
+    await box.add(k('s', 'supply', 11 * H));
+    await box.add(k('g', 'general', 30 * H));
+    const r = await box.flush();
+    expect(r).toEqual({ sent: 2, failed: 1, stoppedOnRetry: false });
+    expect((await box.failed()).map((f) => f.item.id)).toEqual(['w']);
+  });
+  it('skips held items without failing them or stopping the run', async () => {
+    const sent: string[] = [];
+    const now = 1_000_000;
+    const box = createOutbox({ store: memoryKV(), send: async (i) => { sent.push(i.id); }, now: () => now });
+    await box.add({ ...item('held', now - 10), holdUntil: now + 5000 });
+    await box.add(item('next', now - 5));
+    expect(await box.flush()).toEqual({ sent: 1, failed: 0, stoppedOnRetry: false });
+    expect(sent).toEqual(['next']);
+    expect((await box.pending()).map((p) => p.id)).toEqual(['held']);
+    expect(await box.failed()).toHaveLength(0);
+  });
+  it('sends a held item once its holdUntil has passed (tab closed during the location wait)', async () => {
+    const sent: OutboxItem[] = [];
+    let now = 1_000_000;
+    const box = createOutbox({ store: memoryKV(), send: async (i) => { sent.push(i); }, now: () => now });
+    await box.add({ ...item('held', now), holdUntil: now + 8000 });
+    await box.flush();
+    expect(sent).toHaveLength(0);
+    now += 8001;
+    await box.flush();
+    expect(sent.map((s) => s.id)).toEqual(['held']);
+    expect(sent[0]!.draft.lat).toBeNull();
+  });
+  it('update() patches a pending item; flushing then sends the coordinates', async () => {
+    const sent: OutboxItem[] = [];
+    const now = 1_000_000;
+    const box = createOutbox({ store: memoryKV(), send: async (i) => { sent.push(i); }, now: () => now });
+    const it0 = { ...item('a', now), holdUntil: now + 8000 };
+    await box.add(it0);
+    expect(await box.update('a', { draft: { ...it0.draft, lat: 13.7, lng: 100.7 }, holdUntil: 0 })).toBe(true);
+    await box.flush();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.draft).toMatchObject({ lat: 13.7, lng: 100.7 });
+  });
+  it('update() ignores unknown or already-sent items and never resurrects them', async () => {
+    const box = createOutbox({ store: memoryKV(), send: async () => {} });
+    expect(await box.update('nope', { holdUntil: 0 })).toBe(false);
+    await box.add(item('a', Date.now()));
+    await box.flush();
+    expect(await box.update('a', { holdUntil: 0 })).toBe(false);
+    expect(await box.pending()).toHaveLength(0);
+  });
+  it('update() cannot change the id', async () => {
+    const box = createOutbox({ store: memoryKV(), send: async () => {} });
+    await box.add(item('a', 1));
+    await box.update('a', { id: 'b' } as never);
+    expect((await box.pending()).map((p) => p.id)).toEqual(['a']);
+  });
 });

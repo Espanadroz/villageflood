@@ -4,7 +4,7 @@ import { requiresEvidence } from '../../core/evidence';
 import { STATUS_LABEL_TH, SUPPLY_LABEL_TH } from '../../core/labels';
 import type { ReportKind } from '../../core/types';
 import { validateDraft } from '../../core/validate';
-import { getDeviceId, getNickname, setNickname } from '../../data/device';
+import { getDeviceId, getNickname, getUploadKey, setNickname } from '../../data/device';
 import { describeSubmitError, type OutboxItem } from '../../data/submit';
 import { getPositionNow, useGeolocation } from '../../lib/useGeolocation';
 import { newId } from '../../lib/uuid';
@@ -18,6 +18,8 @@ const KINDS: [ReportKind, string][] = [['road', 'สภาพถนน'], ['wate
 const ROAD_VALUES = ['dry', 'small_car', 'high_clearance', 'impassable'] as const;
 const SAVED_MSG = 'ยังส่งไม่สำเร็จ — เก็บรายงานไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเชื่อมต่อได้';
 const SUPPLY_VALUES = ['open', 'closed', 'out_of_stock', 'unreachable'] as const;
+const LOCATION_WAIT_MS = 8000;
+const LOCATION_HOLD_MS = 8000;
 
 export function ReportPage() {
   return (
@@ -42,7 +44,7 @@ function ReportForm() {
   const [done, setDone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { pos, error: geoError, refresh } = useGeolocation();
-  const { pendingCount, refresh: refreshOutbox } = useOutboxStatus();
+  const { refresh: refreshOutbox } = useOutboxStatus();
   const s = snapshot!;
 
   const targets: { id: string; name: string }[] =
@@ -65,13 +67,18 @@ function ReportForm() {
     setBusy(true);
     try {
       setNickname(nickname);
-      const where = (await getPositionNow()) ?? pos;
+      // Persist FIRST (held while we wait for a location fix), so closing the tab during the wait loses nothing:
+      // after the hold expires the item is sent without coordinates and waits for committee confirmation.
+      const draft = { deviceId: getDeviceId(), nickname: nickname.trim(), kind, targetId: generalTarget, value: effectiveValue, lat: null, lng: null, note: kind === 'general' ? note.trim() : null };
       const item: OutboxItem = {
         id: newId(), createdAt: Date.now(), attempts: 0, blob: evidence?.blob ?? null, mediaType: evidence?.mediaType ?? null,
-        draft: { deviceId: getDeviceId(), nickname: nickname.trim(), kind, targetId: generalTarget, value: effectiveValue, lat: where?.lat ?? null, lng: where?.lng ?? null, note: kind === 'general' ? note.trim() : null },
+        uploadKey: getUploadKey(), holdUntil: Date.now() + LOCATION_HOLD_MS, draft,
       };
       try { await outbox.add(item); }
       catch { setErrors(['บันทึกไม่สำเร็จ — รายงานยังไม่ถูกเก็บ กรุณาลองอีกครั้ง']); return; }
+      const where = (await getPositionNow(LOCATION_WAIT_MS)) ?? pos;
+      try { await outbox.update(item.id, { draft: { ...draft, lat: where?.lat ?? null, lng: where?.lng ?? null }, holdUntil: 0 }); }
+      catch { /* still saved; the hold expires and it is sent without coordinates */ }
       try { await outbox.flush(); }
       catch { setDone(SAVED_MSG); return; }
       const [pending, failed] = await Promise.all([outbox.pending(), outbox.failed()]);
@@ -91,7 +98,6 @@ function ReportForm() {
 
   return (
     <>
-      {pendingCount > 0 && <div className="banner banner--warn">มี {pendingCount} รายงานรอส่ง จะส่งให้อัตโนมัติเมื่อมีอินเทอร์เน็ต</div>}
         <div className="card">
           <strong>ประเภท</strong>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>

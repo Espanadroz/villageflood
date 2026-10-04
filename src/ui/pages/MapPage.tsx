@@ -4,6 +4,7 @@ import { LONGDO_CREDIT_TH } from '../../core/config';
 import { derive } from '../../state/derive';
 import { useData } from '../../state/SnapshotContext';
 import { AgeLabel } from '../components/AgeLabel';
+import { TruncatedBanner } from '../components/TruncatedBanner';
 import { FeedItemCard } from '../components/FeedItemCard';
 import { Legend } from '../components/Legend';
 import { StatusBadge } from '../components/StatusBadge';
@@ -30,6 +31,7 @@ export function MapPage() {
 
   return (
     <div className="page">
+      <TruncatedBanner truncated={snap.statusTruncated !== false} />
       <MapView segments={snap.segments} states={d.segmentStates} highlightIds={highlightIds}
         places={visiblePlaces} incidents={visibleIncidents}
         center={snap.settings.origin} onSelectSegment={setSelected} onError={onMapError} onHealthy={onMapHealthy} />
