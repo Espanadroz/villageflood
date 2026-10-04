@@ -35,5 +35,22 @@ it('never presents an unknown segment as passable', async () => {
   await userEvent.click(screen.getByText('pick'));
   expect(document.querySelector('.badge--unknown')).toHaveTextContent('ไม่ทราบ');
   expect(screen.getByText(/ห้ามถือว่าผ่านได้/)).toBeInTheDocument();
-  expect(screen.getByText('ไม่มีข้อมูล')).toBeInTheDocument();
+  const card = screen.getByRole('heading', { name: 'ซอย 1' }).closest('section')!;
+  expect(card).toHaveTextContent('ไม่มีข้อมูล');
+});
+
+it('lists every segment as a button that selects it (text fallback path)', async () => {
+  render(<MemoryRouter><MapPage /></MemoryRouter>);
+  const btn = screen.getByRole('button', { name: /ซอย 1/ });
+  expect(btn).toHaveAttribute('aria-pressed', 'false');
+  await userEvent.click(btn);
+  expect(btn).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByText(/ห้ามถือว่าผ่านได้/)).toBeInTheDocument();
+});
+it('shows a one-time banner when the map reports an error', async () => {
+  render(<MemoryRouter><MapPage /></MemoryRouter>);
+  const p = mapProps.mock.calls.at(-1)![0] as { onError: (m: string) => void };
+  const { act } = await import('@testing-library/react');
+  act(() => { p.onError('x'); p.onError('y'); });
+  expect(screen.getAllByText('แผนที่โหลดไม่สำเร็จ — ดูสถานะถนนจากรายการด้านล่าง')).toHaveLength(1);
 });

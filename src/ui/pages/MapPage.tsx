@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LONGDO_CREDIT_TH } from '../../core/config';
 import { derive } from '../../state/derive';
@@ -9,6 +9,8 @@ import { Legend } from '../components/Legend';
 import { StatusBadge } from '../components/StatusBadge';
 import { MapView } from '../map/MapView';
 
+const EMPTY: never[] = [];
+
 export function MapPage() {
   const { snapshot: s, now } = useData();
   const snap = s!;
@@ -16,19 +18,42 @@ export function MapPage() {
   const [showPlaces, setShowPlaces] = useState(false);
   const [showIncidents, setShowIncidents] = useState(false);
   const d = useMemo(() => derive(snap, now), [snap, now]);
+  const [mapFailed, setMapFailed] = useState(false);
+  const onMapError = useCallback(() => setMapFailed(true), []);
+  const highlightIds = useMemo(() => (selected ? [selected] : EMPTY), [selected]);
+  const visiblePlaces = useMemo(() => (showPlaces ? snap.places : EMPTY), [showPlaces, snap.places]);
+  const visibleIncidents = useMemo(() => (showIncidents ? snap.incidents.filter((i) => i.stopAt > now) : EMPTY), [showIncidents, snap.incidents, now]);
   const seg = snap.segments.find((x) => x.id === selected);
   const st = selected ? d.segmentStates[selected] : undefined;
   const items = snap.feed.filter((f) => f.kind === 'road' && f.targetId === selected).slice(0, 5);
 
   return (
     <div className="page">
-      <MapView segments={snap.segments} states={d.segmentStates} highlightIds={selected ? [selected] : []}
-        places={showPlaces ? snap.places : []} incidents={showIncidents ? snap.incidents.filter((i) => i.stopAt > now) : []}
-        center={snap.settings.origin} onSelectSegment={setSelected} />
+      <MapView segments={snap.segments} states={d.segmentStates} highlightIds={highlightIds}
+        places={visiblePlaces} incidents={visibleIncidents}
+        center={snap.settings.origin} onSelectSegment={setSelected} onError={onMapError} />
+      {mapFailed && <p role="alert" className="conflict">แผนที่โหลดไม่สำเร็จ — ดูสถานะถนนจากรายการด้านล่าง</p>}
       <Legend />
       <label><input type="checkbox" checked={showPlaces} onChange={(e) => setShowPlaces(e.target.checked)} /> จุดเสบียง</label>{' '}
       <label><input type="checkbox" checked={showIncidents} onChange={(e) => setShowIncidents(e.target.checked)} /> เหตุน้ำท่วมจาก Longdo</label>
       {showIncidents && <p className="age">{LONGDO_CREDIT_TH}</p>}
+      <section aria-label="รายการช่วงถนน">
+        <h2>รายการช่วงถนน</h2>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 6 }}>
+          {snap.segments.map((x) => {
+            const sx = d.segmentStates[x.id];
+            return (
+              <li key={x.id}>
+                <button type="button" className="secondary" aria-pressed={selected === x.id} onClick={() => setSelected(x.id)}
+                  style={{ width: '100%', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', textAlign: 'left' }}>
+                  <strong>{x.name}</strong>
+                  <span><StatusBadge state={sx?.value ?? 'unknown'} conflict={sx?.conflict} /> <AgeLabel at={sx?.asOf ?? null} now={now} /></span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
       {seg && st && (
         <section className="card">
           <h2 style={{ margin: 0 }}>{seg.name}</h2>

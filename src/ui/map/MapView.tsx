@@ -3,10 +3,10 @@ import { useEffect, useRef } from 'react';
 import { STATUS_COLOR } from '../../core/labels';
 import type { LatLng, Resolved, RoadStatus } from '../../core/types';
 import type { IncidentRow, PlaceRow, SegmentRow } from '../../data/types';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { segmentFeatureCollection } from './geojson';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import { incidentPoints, placePoints, segmentFeatureCollection, shouldPush, type PushInputs } from './geojson';
 
-// Vite pre-bundling/hashing moves the worker file; point MapLibre at the real asset explicitly.
+// The worker imports a sibling shared chunk; ?worker&url makes Vite bundle it into one self-contained file.
 setWorkerUrl(workerUrl);
 
 const STYLE = 'https://tiles.openfreemap.org/styles/liberty'; // free, no key, no view limit
@@ -14,18 +14,16 @@ const STYLE = 'https://tiles.openfreemap.org/styles/liberty'; // free, no key, n
 interface Props {
   segments: SegmentRow[]; states: Record<string, Resolved<RoadStatus>>; highlightIds?: string[];
   places?: PlaceRow[]; incidents?: IncidentRow[]; center: LatLng; zoom?: number; height?: string;
-  onSelectSegment?: (id: string) => void;
+  onSelectSegment?: (id: string) => void; onError?: (message: string) => void;
 }
 
-const points = (rows: { lng: number; lat: number; props: Record<string, unknown> }[]) => ({
-  type: 'FeatureCollection' as const,
-  features: rows.map((r) => ({ type: 'Feature' as const, properties: r.props, geometry: { type: 'Point' as const, coordinates: [r.lng, r.lat] } })),
-});
-
-export function MapView({ segments, states, highlightIds, places = [], incidents = [], center, zoom = 14, height = '55dvh', onSelectSegment }: Props) {
+export function MapView({ segments, states, highlightIds, places = [], incidents = [], center, zoom = 14, height = '55dvh', onSelectSegment, onError }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
-  const ready = useRef(false);
+  const readyFor = useRef<MapLibreMap | null>(null); // the map instance whose layers are ready
+  const pushed = useRef<PushInputs | null>(null);
+  const onErr = useRef(onError);
+  onErr.current = onError;
   const onSelect = useRef(onSelectSegment);
   onSelect.current = onSelectSegment;
   const latest = useRef({ segments, states, highlightIds, places, incidents });
@@ -33,19 +31,30 @@ export function MapView({ segments, states, highlightIds, places = [], incidents
 
   const push = () => {
     const m = map.current;
-    if (!m || !ready.current) return;
+    if (!m || readyFor.current !== m) return;
     const l = latest.current;
-    (m.getSource('segments') as GeoJSONSource).setData(segmentFeatureCollection(l.segments, l.states, l.highlightIds));
-    (m.getSource('places') as GeoJSONSource).setData(points(l.places.map((p) => ({ lng: p.geojson.coordinates[0]!, lat: p.geojson.coordinates[1]!, props: { name: p.name } }))));
-    (m.getSource('incidents') as GeoJSONSource).setData(points(l.incidents.map((i) => ({ lng: i.lng, lat: i.lat, props: { title: i.title } }))));
+    const next: PushInputs = { segments: l.segments, states: l.states, highlightIds: l.highlightIds, places: l.places, incidents: l.incidents };
+    const need = shouldPush(pushed.current, next);
+    try {
+      if (need.segments) (m.getSource('segments') as GeoJSONSource).setData(segmentFeatureCollection(l.segments, l.states, l.highlightIds));
+      if (need.places) (m.getSource('places') as GeoJSONSource).setData(placePoints(l.places));
+      if (need.incidents) (m.getSource('incidents') as GeoJSONSource).setData(incidentPoints(l.incidents));
+      pushed.current = next;
+    } catch (e) { console.warn('map update failed', e); }
   };
 
   useEffect(() => {
     const m = new MapLibreMap({ container: el.current!, style: STYLE, center: [center.lng, center.lat], zoom, attributionControl: { compact: true } });
     map.current = m;
+    let alive = true; // per-effect: a late event from a removed map cannot affect the next one
+    let layersAdded = false;
+    pushed.current = null;
     m.addControl(new NavigationControl({ showCompass: false }), 'top-right');
     m.addControl(new GeolocateControl({ trackUserLocation: false }), 'top-right');
-    m.on('load', () => {
+    m.on('error', (e) => { onErr.current?.(String(e?.error?.message ?? 'map error')); });
+    const addLayers = () => {
+      if (!alive || layersAdded || m.getSource('segments')) return;
+      layersAdded = true;
       for (const id of ['segments', 'places', 'incidents']) m.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const color = ['match', ['get', 'state'], 'dry', STATUS_COLOR.dry, 'small_car', STATUS_COLOR.small_car, 'high_clearance', STATUS_COLOR.high_clearance, 'impassable', STATUS_COLOR.impassable, STATUS_COLOR.unknown] as any;
@@ -60,13 +69,15 @@ export function MapView({ segments, states, highlightIds, places = [], incidents
         m.on('mouseenter', layer, () => { m.getCanvas().style.cursor = 'pointer'; });
         m.on('mouseleave', layer, () => { m.getCanvas().style.cursor = ''; });
       }
-      ready.current = true;
+      readyFor.current = m;
       push();
-    });
-    return () => { ready.current = false; m.remove(); map.current = null; };
+    };
+    m.on('style.load', addLayers);
+    m.on('load', addLayers);
+    return () => { alive = false; if (readyFor.current === m) readyFor.current = null; m.remove(); map.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(push, [segments, states, highlightIds, places, incidents]);
-  return <div ref={el} style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden' }} aria-label="แผนที่สถานะถนน" />;
+  return <div ref={el} style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden' }} role="region" aria-label="แผนที่สถานะถนน" />;
 }

@@ -21,7 +21,7 @@ beforeEach(() => { rpc.mockReset(); reload.mockReset(); });
 it('confirms via rpc and reloads on success', async () => {
   rpc.mockResolvedValue({ error: null });
   render(<FeedItemCard item={item} snapshot={snap} now={1000} />);
-  await userEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }));
+  await userEvent.click(screen.getByRole('button', { name: 'ยืนยันรายงาน ซอย 1' }));
   await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
   expect(rpc).toHaveBeenCalledWith('confirm_report', { p_device: 'dev-1', p_report: 'r1' });
   expect(screen.queryByRole('alert')).toBeNull();
@@ -31,10 +31,21 @@ it('shows the Thai error, does not reload, and disables the button while pending
   let resolve!: (v: unknown) => void;
   rpc.mockReturnValue(new Promise((r) => { resolve = r; }));
   render(<FeedItemCard item={item} snapshot={snap} now={1000} />);
-  await userEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }));
-  expect(screen.getByRole('button', { name: 'ยืนยัน' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'ยืนยันรายงาน ซอย 1' }));
+  expect(screen.getByRole('button', { name: 'ยืนยันรายงาน ซอย 1' })).toBeDisabled();
   resolve({ error: { message: 'not_a_reporter' } });
   expect(await screen.findByRole('alert')).toHaveTextContent('ต้องส่งรายงานอย่างน้อย 1 ครั้ง');
   expect(reload).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'ยืนยัน' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'ยืนยันรายงาน ซอย 1' })).toBeEnabled();
+});
+
+const snapTtl = { ...snap, settings: { ttlMs: { road: 3 * 3_600_000, water_level: 1, supply: 1 } } } as unknown as Snapshot;
+it('marks an expired road report and labels the confirm button with the target', () => {
+  render(<FeedItemCard item={{ ...item, createdAt: 0 }} snapshot={snapTtl} now={4 * 3_600_000} />);
+  expect(screen.getByText('หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'ยืนยันรายงาน ซอย 1' })).toBeInTheDocument();
+});
+it('shows no expiry marker for a fresh report', () => {
+  render(<FeedItemCard item={{ ...item, createdAt: 3_600_000 }} snapshot={snapTtl} now={4 * 3_600_000} />);
+  expect(screen.queryByText('หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ')).toBeNull();
 });
