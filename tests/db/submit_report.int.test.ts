@@ -1,4 +1,5 @@
 // Run: npm run test:db   (needs a LOCAL or DEV Supabase with seed.sql applied; reads .env)
+import { execFileSync } from 'node:child_process';
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL!;
@@ -344,5 +345,74 @@ describe('committee', () => {
     const cc = await c.from('segments').update({ sort: 0 }).eq('id', 'seg-demo-2').select();
     expect(cc.error).toBeNull();
     expect(cc.data).toHaveLength(1);
+  });
+});
+
+describe('idempotent submit_report (client_id)', () => {
+  const countRows = async (dev: string) =>
+    (await service.from('reports').select('*', { count: 'exact', head: true }).eq('device_id', dev)).count;
+
+  it('same (device, client_id) twice returns the same id and one row', async () => {
+    const dev = crypto.randomUUID(); const cid = crypto.randomUUID();
+    const a = await submit(dev, { p_client_id: cid });
+    const b = await submit(dev, { p_client_id: cid });
+    expect(a.error).toBeNull(); expect(b.error).toBeNull();
+    expect(b.data).toBe(a.data);
+    expect(await countRows(dev)).toBe(1);
+    expect((await row(a.data as string)).client_id).toBe(cid);
+  });
+  it('same client_id from two devices makes two rows', async () => {
+    const cid = crypto.randomUUID();
+    const a = await submit(crypto.randomUUID(), { p_client_id: cid });
+    const b = await submit(crypto.randomUUID(), { p_client_id: cid });
+    expect(a.data).not.toBe(b.data);
+  });
+  it('null client_id is not deduplicated', async () => {
+    const dev = crypto.randomUUID();
+    const a = await submit(dev, {}); const b = await submit(dev, {});
+    expect(a.data).not.toBe(b.data);
+    expect(await countRows(dev)).toBe(2);
+  });
+  it('a replay does not consume a rate-limit slot', async () => {
+    const dev = crypto.randomUUID(); const first = crypto.randomUUID();
+    const r1 = await submit(dev, { p_client_id: first });
+    for (let i = 1; i < 10; i++) expect((await submit(dev, { p_client_id: crypto.randomUUID() })).error).toBeNull();
+    const replay = await submit(dev, { p_client_id: first });
+    expect(replay.error).toBeNull();
+    expect(replay.data).toBe(r1.data);
+    expect((await submit(dev, { p_client_id: crypto.randomUUID() })).error?.message).toContain('rate_limited');
+    expect(await countRows(dev)).toBe(10);
+  });
+  it('a replay by a blocked device is rejected', async () => {
+    const dev = crypto.randomUUID(); const cid = crypto.randomUUID();
+    await submit(dev, { p_client_id: cid });
+    await service.from('devices').update({ blocked: true }).eq('id', dev);
+    expect((await submit(dev, { p_client_id: cid })).error?.message).toContain('device_blocked');
+  });
+  it('concurrent identical replays produce one row', async () => {
+    const dev = crypto.randomUUID(); const cid = crypto.randomUUID();
+    const rs = await Promise.all(Array.from({ length: 5 }, () => submit(dev, { p_client_id: cid })));
+    rs.forEach((r) => expect(r.error).toBeNull());
+    expect(new Set(rs.map((r) => r.data)).size).toBe(1);
+    expect(await countRows(dev)).toBe(1);
+  });
+  it('a replay with different content returns the original and leaves it unchanged', async () => {
+    const dev = crypto.randomUUID(); const cid = crypto.randomUUID();
+    const a = await submit(dev, { p_client_id: cid, p_value: 'impassable' });
+    const b = await submit(dev, { p_client_id: cid, p_value: 'flying', p_target: 'nope', p_lat: FAR.lat, p_lng: FAR.lng });
+    expect(b.error).toBeNull();
+    expect(b.data).toBe(a.data);
+    const r = await row(a.data as string);
+    expect(r.value).toBe('impassable');
+    expect(r.target_id).toBe('seg-demo-1');
+    expect(r.location_ok).toBe(true);
+  });
+  it('has a single submit_report overload that anon can execute', async () => {
+    const psql = (sql: string) =>
+      execFileSync('docker', ['exec', 'supabase_db_village-flood-app', 'psql', '-U', 'postgres', '-At', '-c', sql]).toString().trim();
+    expect(psql("select proname || ':' || pronargs from pg_proc where proname='submit_report'")).toBe('submit_report:11');
+    expect(psql("select has_function_privilege('anon', 'submit_report(uuid,text,text,text,text,double precision,double precision,text,text,text,uuid)', 'execute')")).toBe('t');
+    expect(psql("select has_function_privilege('public', 'submit_report(uuid,text,text,text,text,double precision,double precision,text,text,text,uuid)', 'execute')")).toBe('f');
+    expect((await submit(crypto.randomUUID(), { p_client_id: crypto.randomUUID() })).error).toBeNull();
   });
 });
