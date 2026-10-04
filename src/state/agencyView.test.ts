@@ -43,7 +43,26 @@ describe('agencyView', () => {
       R({ source: 'bma_rain', stationId: 'RF.MBR.03', stationName: 'ฝน', metric: 'rf24hr', value: 30, unit: 'mm' }),
     ]), NOW);
     expect(v.others.map((g) => g.stationId)).toEqual(['WL.STN.01']);
-    expect(v.rain).toEqual([expect.objectContaining({ stationId: 'RF.MBR.03', rf1hr: 27, rf24hr: 30, stale: false })]);
+    expect(v.rain).toEqual([expect.objectContaining({ stationId: 'RF.MBR.03', unit: 'mm', rf1hr: expect.objectContaining({ value: 27, stale: false }), rf24hr: expect.objectContaining({ value: 30, stale: false }) })]);
+  });
+});
+
+describe('rain per-metric staleness', () => {
+  const rr = (o: Partial<AgencyReading>) => R({ source: 'bma_rain', stationId: 'RF.1', stationName: 'ฝน', unit: 'mm', ...o });
+  it('marks a stale rf1hr stale even when rf24hr is fresh', () => {
+    const v = agencyView(snap([rr({ metric: 'rf1hr', value: 5, observedAt: NOW - 3 * HOUR }), rr({ metric: 'rf24hr', value: 9, observedAt: NOW - 5 * MINUTE })]), NOW);
+    expect(v.rain[0]!.rf1hr).toMatchObject({ value: 5, stale: true, observedAt: NOW - 3 * HOUR });
+    expect(v.rain[0]!.rf24hr).toMatchObject({ value: 9, stale: false });
+  });
+  it('treats NaN observedAt as stale and keeps a missing metric null', () => {
+    const v = agencyView(snap([rr({ metric: 'rf1hr', value: 5, observedAt: NaN })]), NOW);
+    expect(v.rain[0]!.rf1hr).toMatchObject({ stale: true });
+    expect(v.rain[0]!.rf24hr).toBeNull();
+  });
+  it('passes the stored unit through, null when missing or mixed', () => {
+    expect(agencyView(snap([rr({ metric: 'rf1hr', unit: 'in' })]), NOW).rain[0]!.unit).toBe('in');
+    expect(agencyView(snap([rr({ metric: 'rf1hr', unit: 'mm' }), rr({ metric: 'rf24hr', unit: 'in' })]), NOW).rain[0]!.unit).toBeNull();
+    expect(agencyView(snap([rr({ metric: 'rf1hr', unit: '' })]), NOW).rain[0]!.unit).toBeNull();
   });
 });
 
@@ -67,6 +86,16 @@ describe('committeeNote', () => {
   it('ignores resident messages and flags notes older than 12h as stale', () => {
     const s = snap([], [], { feed: [f({ byCommittee: false, note: 'ลูกบ้านพิมพ์' }), f({ createdAt: NOW - 13 * HOUR })] });
     expect(committeeNote(s, 'wall', NOW)).toMatchObject({ note: 'น้ำเสมอขีด 2', stale: true });
+  });
+  it('note expiry is exactly 12h (>= is stale)', () => {
+    const mk = (age: number) => snap([], [], { feed: [f({ createdAt: NOW - age })] });
+    expect(committeeNote(mk(12 * HOUR), 'wall', NOW)!.stale).toBe(true);
+    expect(committeeNote(mk(12 * HOUR - 1), 'wall', NOW)!.stale).toBe(false);
+  });
+  it('ignores the supply ttl setting', () => {
+    const s = snap([], [], { feed: [f({ createdAt: NOW - 5 * HOUR })] });
+    (s.settings as any).ttlMs.supply = 1 * HOUR;
+    expect(committeeNote(s, 'wall', NOW)!.stale).toBe(false);
   });
   it('returns null when nothing was ever posted', () => expect(committeeNote(snap([], [], { feed: [] }), 'drainage', NOW)).toBeNull());
 });

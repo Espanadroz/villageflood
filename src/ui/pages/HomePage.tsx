@@ -33,8 +33,8 @@ export function HomePage() {
         <strong>กรรมการหมู่บ้านแจ้ง</strong>
         {([['กำแพงริมคลอง', wall], ['การระบายน้ำ', drainage]] as const).map(([label, n]) => (
           <p key={label} style={{ margin: '6px 0' }}>
-            <b>{label}:</b> {n ? n.note : 'ยังไม่มีการอัปเดตจากกรรมการ'}{' '}
-            {n && <AgeLabel at={n.createdAt} now={now} maxAgeMs={n.stale ? 0 : undefined} />}
+            <b>{label}:</b> {n && n.note.trim() ? n.note : 'ยังไม่มีการอัปเดตจากกรรมการ'}{' '}
+            {n && n.note.trim() && <AgeLabel at={n.createdAt} now={now} maxAgeMs={n.stale ? 0 : undefined} />}
           </p>
         ))}
       </section>

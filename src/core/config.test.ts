@@ -1,4 +1,6 @@
-import { TTL_MS, HOUR, MEDIA_RETENTION_DAYS, GOOGLE_MAPS_MAX_WAYPOINTS, DISCLAIMER_TH, PRIMARY_GAUGE } from './config';
+import { TTL_MS, HOUR, MEDIA_RETENTION_DAYS, GOOGLE_MAPS_MAX_WAYPOINTS, DISCLAIMER_TH, PRIMARY_GAUGE, COMMITTEE_NOTE_MAX_AGE_MS } from './config';
+
+it('committee note max age is 12h', () => { expect(COMMITTEE_NOTE_MAX_AGE_MS).toBe(12 * HOUR); });
 
 describe('spec constants', () => {
   it('uses the agreed default TTLs', () => {

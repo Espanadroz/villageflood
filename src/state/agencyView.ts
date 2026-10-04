@@ -1,12 +1,14 @@
 import { freshness, gaugeState, trend, type GaugeState, type Trend } from '../core/agency';
-import { HOUR, PRIMARY_GAUGE, TTL_MS, WARNING_MAX_AGE_MS } from '../core/config';
+import { COMMITTEE_NOTE_MAX_AGE_MS, PRIMARY_GAUGE, WARNING_MAX_AGE_MS } from '../core/config';
 import type { AgencyReading, Snapshot, WarningRow } from '../data/types';
 
 export interface GaugeView {
   stationId: string; name: string; source: string; value: number; unit: string; observedAt: number; ageMs: number; stale: boolean;
   trend: Trend; state: GaugeState; thresholds: { watch: number; danger: number } | null;
 }
-export interface RainView { stationId: string; name: string; rf1hr: number | null; rf24hr: number | null; observedAt: number; stale: boolean }
+export interface RainCell { value: number; observedAt: number; stale: boolean }
+/** unit is the unit as stored; null when missing or mixed across this station's rows. */
+export interface RainView { stationId: string; name: string; unit: string | null; rf1hr: RainCell | null; rf24hr: RainCell | null; observedAt: number; stale: boolean }
 
 const CANAL_METRICS: Record<string, string> = { bma_canal: 'wl_in', thaiwater: 'waterlevel_msl' };
 
@@ -25,12 +27,20 @@ export function agencyView(s: Snapshot, now: number): { primary: GaugeView | nul
   const rainRows = s.latest.filter((r) => r.source === 'bma_rain');
   const byStation = new Map<string, AgencyReading[]>();
   for (const r of rainRows) byStation.set(r.stationId, [...(byStation.get(r.stationId) ?? []), r]);
+  const cell = (rows: AgencyReading[], metric: string): RainCell | null => {
+    const r = rows.find((x) => x.metric === metric);
+    return r ? { value: r.value, observedAt: r.observedAt, stale: freshness(r.observedAt, now, maxAge).stale } : null;
+  };
   const rain: RainView[] = [...byStation.entries()].map(([id, rows]) => {
-    const newest = Math.max(...rows.map((r) => r.observedAt));
+    const units = new Set(rows.map((r) => r.unit));
+    const unit = units.size === 1 && rows[0]!.unit ? rows[0]!.unit : null;
+    const rf1hr = cell(rows, 'rf1hr');
+    const rf24hr = cell(rows, 'rf24hr');
+    const finite = rows.map((r) => r.observedAt).filter(Number.isFinite);
     return {
-      stationId: id, name: rows[0]!.stationName,
-      rf1hr: rows.find((r) => r.metric === 'rf1hr')?.value ?? null, rf24hr: rows.find((r) => r.metric === 'rf24hr')?.value ?? null,
-      observedAt: newest, stale: freshness(newest, now, maxAge).stale,
+      stationId: id, name: rows[0]!.stationName, unit, rf1hr, rf24hr,
+      observedAt: finite.length ? Math.max(...finite) : NaN,
+      stale: [rf1hr, rf24hr].some((c) => c?.stale ?? false) || !finite.length,
     };
   });
 
@@ -45,5 +55,5 @@ export function visibleWarnings(s: Snapshot, now: number): WarningRow[] {
 export function committeeNote(s: Snapshot, target: 'wall' | 'drainage', now: number): { note: string; createdAt: number; stale: boolean } | null {
   const newest = s.feed.filter((f) => f.kind === 'general' && f.byCommittee && f.targetId === target).sort((a, b) => b.createdAt - a.createdAt)[0];
   if (!newest) return null;
-  return { note: newest.note ?? '', createdAt: newest.createdAt, stale: now - newest.createdAt > Math.max(s.settings.ttlMs.supply || TTL_MS.supply, HOUR) };
+  return { note: newest.note ?? '', createdAt: newest.createdAt, stale: !(now - newest.createdAt < COMMITTEE_NOTE_MAX_AGE_MS) };
 }

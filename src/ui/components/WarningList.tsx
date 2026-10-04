@@ -1,4 +1,5 @@
 import type { WarningRow } from '../../data/types';
+import { safeHttpUrl } from '../../lib/url';
 import { AgeLabel } from './AgeLabel';
 
 export function WarningList({ warnings, now }: { warnings: WarningRow[]; now: number }) {
@@ -10,9 +11,10 @@ export function WarningList({ warnings, now }: { warnings: WarningRow[]; now: nu
         <details key={w.id} className="card" open={w.mentionsBangkok}>
           <summary><strong>{w.title}</strong> {w.mentionsBangkok && <span className="badge" style={{ background: '#d73027' }}>กล่าวถึงกรุงเทพฯ</span>} <AgeLabel at={w.issuedAt} now={now} /></summary>
           <p style={{ whiteSpace: 'pre-line' }}>{w.body}</p>
-          {w.url && <a href={w.url} target="_blank" rel="noreferrer">ที่มา: กรมอุตุนิยมวิทยา</a>}
+          {safeHttpUrl(w.url) && <a href={safeHttpUrl(w.url)!} target="_blank" rel="noreferrer noopener">ที่มา: กรมอุตุนิยมวิทยา</a>}
         </details>
       ))}
+      {warnings.length > 3 && <p className="age">+{warnings.length - 3} รายการเก่ากว่า</p>}
     </section>
   );
 }

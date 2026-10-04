@@ -9,6 +9,9 @@ export const AGENCY_MAX_AGE_MS = 60 * MINUTE;
 /** TMD warnings older than this are hidden. */
 export const WARNING_MAX_AGE_MS = 48 * HOUR;
 
+/** Committee notes at least this old are shown as expired. */
+export const COMMITTEE_NOTE_MAX_AGE_MS = 12 * HOUR;
+
 export const MEDIA_RETENTION_DAYS = 30;
 export const MAX_VIDEO_SECONDS = 15;
 export const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // must match the storage bucket limit

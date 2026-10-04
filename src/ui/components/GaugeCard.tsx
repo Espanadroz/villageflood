@@ -11,9 +11,10 @@ export function GaugeCard({ g, now, maxAgeMs, big }: { g: GaugeView; now: number
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
         <strong>{g.name}</strong><AgeLabel at={g.observedAt} now={now} maxAgeMs={maxAgeMs} />
       </div>
-      <p style={{ margin: '4px 0', fontSize: big ? 32 : 22, fontWeight: 700 }}>
+      {g.stale && <p className="age" style={{ margin: '4px 0 0' }}>ค่าล่าสุดที่ได้:</p>}
+      <p style={{ margin: '4px 0', fontSize: g.stale ? 16 : big ? 32 : 22, fontWeight: 700, opacity: g.stale ? 0.5 : 1 }}>
         {Number.isFinite(g.value) ? g.value.toFixed(2) : '–'} <small style={{ fontSize: 14, fontWeight: 400 }}>{g.unit}</small>
-        {g.state !== 'uncalibrated' && <span className="badge" style={{ background: STATE_COLOR[g.state], marginLeft: 8 }}>{STATE_LABEL[g.state]}</span>}
+        {g.state !== 'uncalibrated' && g.state !== 'stale' && <span className="badge" style={{ background: STATE_COLOR[g.state], marginLeft: 8 }}>{STATE_LABEL[g.state]}</span>}
       </p>
       <p className="age">{g.stale ? 'ไม่ใช้เป็นข้อมูลปัจจุบัน' : `แนวโน้ม: ${TREND_LABEL_TH[g.trend]}`}
         {g.state === 'uncalibrated' && ' · ค่าดิบจากหน่วยงาน ยังไม่ได้ตั้งเกณฑ์เตือนของหมู่บ้าน'}</p>
