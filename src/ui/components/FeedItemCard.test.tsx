@@ -46,6 +46,15 @@ it('marks an expired road report and labels the confirm button with the target',
   expect(screen.getByRole('button', { name: 'ยืนยันรายงาน ซอย 1' })).toBeInTheDocument();
 });
 it('shows no expiry marker for a fresh report', () => {
-  render(<FeedItemCard item={{ ...item, createdAt: 3_600_000 }} snapshot={snapTtl} now={4 * 3_600_000} />);
+  render(<FeedItemCard item={{ ...item, createdAt: 2 * 3_600_000 }} snapshot={snapTtl} now={4 * 3_600_000} />);
+  expect(screen.queryByText('หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ')).toBeNull();
+});
+
+it('treats a report exactly at its TTL as expired (same boundary as the engine)', () => {
+  render(<FeedItemCard item={{ ...item, createdAt: 0 }} snapshot={snapTtl} now={3 * 3_600_000} />);
+  expect(screen.getByText('หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ')).toBeInTheDocument();
+});
+it('is not expired one millisecond before the TTL', () => {
+  render(<FeedItemCard item={{ ...item, createdAt: 0 }} snapshot={snapTtl} now={3 * 3_600_000 - 1} />);
   expect(screen.queryByText('หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ')).toBeNull();
 });

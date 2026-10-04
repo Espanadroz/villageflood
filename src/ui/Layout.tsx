@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Disclaimer } from './components/Disclaimer';
 import { OfflineBanner } from './components/OfflineBanner';
 
@@ -8,7 +9,7 @@ export function Layout() {
   return (
     <div className="app">
       <OfflineBanner />
-      <main className="main"><Outlet /></main>
+      <main className="main"><ErrorBoundary><Outlet /></ErrorBoundary></main>
       <Disclaimer />
       <nav className="tabs">
         {tabs.map(([to, label]) => (

@@ -20,6 +20,7 @@ export function MapPage() {
   const d = useMemo(() => derive(snap, now), [snap, now]);
   const [mapFailed, setMapFailed] = useState(false);
   const onMapError = useCallback(() => setMapFailed(true), []);
+  const onMapHealthy = useCallback(() => setMapFailed(false), []);
   const highlightIds = useMemo(() => (selected ? [selected] : EMPTY), [selected]);
   const visiblePlaces = useMemo(() => (showPlaces ? snap.places : EMPTY), [showPlaces, snap.places]);
   const visibleIncidents = useMemo(() => (showIncidents ? snap.incidents.filter((i) => i.stopAt > now) : EMPTY), [showIncidents, snap.incidents, now]);
@@ -31,7 +32,7 @@ export function MapPage() {
     <div className="page">
       <MapView segments={snap.segments} states={d.segmentStates} highlightIds={highlightIds}
         places={visiblePlaces} incidents={visibleIncidents}
-        center={snap.settings.origin} onSelectSegment={setSelected} onError={onMapError} />
+        center={snap.settings.origin} onSelectSegment={setSelected} onError={onMapError} onHealthy={onMapHealthy} />
       {mapFailed && <p role="alert" className="conflict">แผนที่โหลดไม่สำเร็จ — ดูสถานะถนนจากรายการด้านล่าง</p>}
       <Legend />
       <label><input type="checkbox" checked={showPlaces} onChange={(e) => setShowPlaces(e.target.checked)} /> จุดเสบียง</label>{' '}

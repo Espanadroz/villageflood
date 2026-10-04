@@ -1,10 +1,11 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyRetry } from './ErrorBoundary';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { SnapshotProvider, useData } from '../state/SnapshotContext';
 import { OutboxProvider } from '../state/OutboxContext';
 import { Layout } from './Layout';
 import { ReportPage } from './pages/ReportPage';
-const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
+const MapPage = lazyRetry(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
 
 import { Disclaimer } from './components/Disclaimer';
 import type { Snapshot } from '../data/types';

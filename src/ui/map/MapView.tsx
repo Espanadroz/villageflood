@@ -4,6 +4,7 @@ import { STATUS_COLOR } from '../../core/labels';
 import type { LatLng, Resolved, RoadStatus } from '../../core/types';
 import type { IncidentRow, PlaceRow, SegmentRow } from '../../data/types';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import { isFatalMapError } from './fatal';
 import { incidentPoints, placePoints, segmentFeatureCollection, shouldPush, type PushInputs } from './geojson';
 
 // The worker imports a sibling shared chunk; ?worker&url makes Vite bundle it into one self-contained file.
@@ -14,16 +15,18 @@ const STYLE = 'https://tiles.openfreemap.org/styles/liberty'; // free, no key, n
 interface Props {
   segments: SegmentRow[]; states: Record<string, Resolved<RoadStatus>>; highlightIds?: string[];
   places?: PlaceRow[]; incidents?: IncidentRow[]; center: LatLng; zoom?: number; height?: string;
-  onSelectSegment?: (id: string) => void; onError?: (message: string) => void;
+  onSelectSegment?: (id: string) => void; onError?: (message: string) => void; onHealthy?: () => void;
 }
 
-export function MapView({ segments, states, highlightIds, places = [], incidents = [], center, zoom = 14, height = '55dvh', onSelectSegment, onError }: Props) {
+export function MapView({ segments, states, highlightIds, places = [], incidents = [], center, zoom = 14, height = '55dvh', onSelectSegment, onError, onHealthy }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const readyFor = useRef<MapLibreMap | null>(null); // the map instance whose layers are ready
   const pushed = useRef<PushInputs | null>(null);
   const onErr = useRef(onError);
   onErr.current = onError;
+  const onOk = useRef(onHealthy);
+  onOk.current = onHealthy;
   const onSelect = useRef(onSelectSegment);
   onSelect.current = onSelectSegment;
   const latest = useRef({ segments, states, highlightIds, places, incidents });
@@ -51,9 +54,18 @@ export function MapView({ segments, states, highlightIds, places = [], incidents
     pushed.current = null;
     m.addControl(new NavigationControl({ showCompass: false }), 'top-right');
     m.addControl(new GeolocateControl({ trackUserLocation: false }), 'top-right');
-    m.on('error', (e) => { onErr.current?.(String(e?.error?.message ?? 'map error')); });
+    let styleLoaded = false;
+    const fatal = (msg: string) => { if (alive) onErr.current?.(msg); };
+    m.on('error', (e) => {
+      const msg = String(e?.error?.message ?? 'map error');
+      if (isFatalMapError(e, { styleLoaded })) fatal(msg); else console.debug('map error (ignored)', msg);
+    });
+    m.on('style.load', () => { styleLoaded = true; });
+    m.on('idle', () => { if (alive && layersAdded) onOk.current?.(); });
+    const timer = setTimeout(() => { if (!layersAdded) fatal('map layers not ready after 12s'); }, 12_000);
     const addLayers = () => {
       if (!alive || layersAdded || m.getSource('segments')) return;
+      try {
       layersAdded = true;
       for (const id of ['segments', 'places', 'incidents']) m.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -71,10 +83,11 @@ export function MapView({ segments, states, highlightIds, places = [], incidents
       }
       readyFor.current = m;
       push();
+      } catch (e) { console.warn('map layers failed', e); fatal(String((e as Error)?.message ?? e)); }
     };
     m.on('style.load', addLayers);
     m.on('load', addLayers);
-    return () => { alive = false; if (readyFor.current === m) readyFor.current = null; m.remove(); map.current = null; };
+    return () => { alive = false; clearTimeout(timer); if (readyFor.current === m) readyFor.current = null; m.remove(); map.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

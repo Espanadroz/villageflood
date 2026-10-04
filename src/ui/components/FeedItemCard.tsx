@@ -11,7 +11,7 @@ export function FeedItemCard({ item, snapshot, now }: { item: FeedItem; snapshot
   const { reload } = useData();
   const { target, valueLabel } = describeFeedItem(item, snapshot);
   const ttl = item.kind === 'general' ? undefined : snapshot.settings?.ttlMs?.[item.kind];
-  const expired = ttl !== undefined && now - item.createdAt > ttl;
+  const expired = ttl !== undefined && now - item.createdAt >= ttl;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const confirm = async () => {
