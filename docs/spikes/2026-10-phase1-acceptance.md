@@ -13,6 +13,11 @@
 | Airplane mode submit → pending banner → auto-send on reconnect | | | | |
 | Google Maps button opens with the correct origin/destination/waypoints | | | | |
 | Add to Home Screen; reopen offline shows cached data with the offline banner | | | | |
+| Privacy page reachable from the consent screen | | | | |
+| Committee magic-link login: redirect lands on /admin and shows the committee tools | | | | |
+| Add to Home Screen on iOS and Android: icon looks right (not clipped), opens standalone | | | | |
+| Reopen offline shows the cached snapshot with the offline banner | | | | |
+| After a new deploy, an already-open tab recovers (reload button) when a lazy chunk is gone | | | | |
 
 Devices used:
 

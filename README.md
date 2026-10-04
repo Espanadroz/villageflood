@@ -33,14 +33,27 @@ Installable (manifest + icons in `public/`, regenerate PNGs with `node scripts/m
 - Committee access: add users to `committee_members` (see the SQL in the admin section of the plan, Task 15 Step 3).
 
 ## Deployment checklist for a human
-NOT done by the automated build; each step below needs a person (costs, accounts, secrets).
+NOT done by the automated build; each step needs a person (costs, accounts, secrets).
+
+> **WARNING: never deploy a local build.** `npm run build`, `dist/` and `vercel deploy --prebuilt` bake your local `.env` VITE_* values (localhost Supabase URL and anon key) into the bundle. Deploy from Git / `vercel --prod` so Vercel builds with its own env vars set in the Vercel dashboard.
 
 1. Create the production Supabase project (Singapore region). Creating a project can cost money: confirm the plan/price first. Record the project ref.
 2. Apply the schema only (never the demo seed): `supabase link --project-ref <ref>` then `supabase db push` (migrations 0001-0004).
-3. Authentication → URL Configuration: set the Site URL to the production domain and add the production `/admin` URL as a redirect URL.
-4. Configure custom SMTP in Supabase Auth so magic-link emails to committee members are reliably delivered.
-5. Add committee members to `committee_members` with the SQL from plan Task 15 Step 3 (their login emails).
-6. Vercel: `vercel link`, then set env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_CAPTURE_MODE` (value from the Task 1 spike) for production. Never put the service-role key in browser-exposed variables. Deploy with `vercel --prod` and record the URL above.
-7. Poller hosting: decide from the Task 1 spike results (`POLLER_HOST`): is a Thai IP needed? Did the BMA request return 403 from the chosen host? On the host set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` of the production project and schedule the poll every 10 minutes (cron).
-8. Load real data: segments, routes, wall marks and places via the admin editor, or `node --env-file=.env scripts/import-geo.mjs <table> <file> --i-know-this-is-production` with the committee's approved files (`data/places.candidates.json` reviewed first).
-9. Have the privacy text reviewed (PDPA), then fill in the acceptance checklist on real phones and run the committee drill (plan Task 16 Steps 6-7) before announcing to the whole group.
+3. Create the Vercel project (connect the Git repo) and set production env vars in the Vercel dashboard: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_CAPTURE_MODE` (value from the Task 1 spike results). Never put the service-role key in browser-exposed variables.
+4. First deploy (push to the production branch, or `vercel --prod` from a Git-connected project). Record the production URL at the top of this file.
+5. Only now that the domain exists: Supabase Authentication → URL Configuration: set the Site URL to the production domain and add `https://<production-domain>/admin` as a redirect URL.
+6. Configure custom SMTP in Supabase Auth so magic-link emails to committee members are reliably delivered.
+7. Add committee members (after each has signed in once so they exist in `auth.users`), in the Supabase SQL editor:
+   ```sql
+   insert into committee_members (user_id)
+   select id from auth.users where email in ('member1@example.com', 'member2@example.com')
+   on conflict do nothing;
+   ```
+8. Load real data (segments, routes, wall marks, places, destinations) via the admin editor, or with the import script against production using the committee's approved files (review `data/places.candidates.json` first):
+   ```bash
+   npx tsx --env-file=.env scripts/import-geo.mjs segments data/segments.json --i-know-this-is-production
+   npx tsx --env-file=.env scripts/import-geo.mjs places data/places.json --i-know-this-is-production
+   ```
+   (`.env` must then hold the PRODUCTION `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`; restore local values afterwards.)
+9. Poller hosting: decide from the Task 1 spike results (`POLLER_HOST`): is a Thai IP needed? Did the BMA request return 403 from the chosen host? On that host set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` of the production project, then schedule `npm run poll` every 10 minutes (cron).
+10. Have the privacy text reviewed (PDPA), fill in `docs/spikes/2026-10-phase1-acceptance.md` on real phones and run the committee drill (plan Task 16 Steps 6-7) before announcing to the whole group.
