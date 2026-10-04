@@ -9,6 +9,7 @@ import { ReportPage } from './pages/ReportPage';
 import { SupplyPage } from './pages/SupplyPage';
 const MapPage = lazyRetry(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
 const RoutesPage = lazyRetry(() => import('./pages/RoutesPage').then((m) => ({ default: m.RoutesPage })));
+const AdminPage = lazyRetry(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
 
 import { Disclaimer } from './components/Disclaimer';
 import type { Snapshot } from '../data/types';
@@ -39,6 +40,7 @@ export function App() {
               <Route path="supply" element={<SupplyPage />} />
               <Route path="map" element={<Suspense fallback={<p className="page">กำลังโหลดแผนที่…</p>}><MapPage /></Suspense>} />
               <Route path="routes" element={<Suspense fallback={<p className="page">กำลังโหลดแผนที่…</p>}><RoutesPage /></Suspense>} />
+              <Route path="admin" element={<Suspense fallback={<p className="page">กำลังโหลด…</p>}><AdminPage /></Suspense>} />
             </Route>
           </Routes>
         </Gate>
