@@ -7,6 +7,7 @@ import { Layout } from './Layout';
 import { HomePage } from './pages/HomePage';
 import { ReportPage } from './pages/ReportPage';
 const MapPage = lazyRetry(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
+const RoutesPage = lazyRetry(() => import('./pages/RoutesPage').then((m) => ({ default: m.RoutesPage })));
 
 import { Disclaimer } from './components/Disclaimer';
 import type { Snapshot } from '../data/types';
@@ -35,6 +36,7 @@ export function App() {
               <Route index element={<HomePage />} />
               <Route path="report" element={<ReportPage />} />
               <Route path="map" element={<Suspense fallback={<p className="page">กำลังโหลดแผนที่…</p>}><MapPage /></Suspense>} />
+              <Route path="routes" element={<Suspense fallback={<p className="page">กำลังโหลดแผนที่…</p>}><RoutesPage /></Suspense>} />
             </Route>
           </Routes>
         </Gate>
