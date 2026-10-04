@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera test</title></head>
+<body style="font:16px system-ui;padding:16px">
+<h3>1. input capture (photo)</h3>
+<input id="p" type="file" accept="image/*" capture="environment">
+<h3>2. input capture (video)</h3>
+<input id="v" type="file" accept="video/*" capture="environment">
+<h3>3. getUserMedia camera</h3>
+<button id="gum">open camera</button> <video id="vid" playsinline muted style="width:100%"></video>
+<h3>4. geolocation</h3>
+<button id="geo">get position</button>
+<pre id="log"></pre>
+<script>
+const log = (m) => (document.getElementById('log').textContent += m + '\n');
+const info = (f) => log(`${f.name} type=${f.type} size=${f.size} lastModifiedAgeSec=${Math.round((Date.now() - f.lastModified) / 1000)}`);
+p.onchange = () => info(p.files[0]);
+v.onchange = () => info(v.files[0]);
+gum.onclick = async () => {
+  try { vid.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); await vid.play(); log('getUserMedia OK; MediaRecorder=' + (typeof MediaRecorder)); }
+  catch (e) { log('getUserMedia FAIL ' + e.name); }
+};
+geo.onclick = () => navigator.geolocation.getCurrentPosition(
+  (x) => log(`geo OK ${x.coords.latitude},${x.coords.longitude} ±${x.coords.accuracy}m`),
+  (e) => log('geo FAIL ' + e.code + ' ' + e.message), { enableHighAccuracy: true, timeout: 15000 });
+</script></body></html>
