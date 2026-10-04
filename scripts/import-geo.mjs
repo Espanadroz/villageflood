@@ -1,6 +1,6 @@
 // scripts/import-geo.mjs — load many content rows at once with the service-role key (committee-approved data only).
 // Node-only script, never bundled into the browser app.
-// Usage:  npx tsx --env-file=.env scripts/import-geo.mjs <table> <file.json> [--dry-run] [--i-know-this-is-production]
+// Usage:  npx tsx --env-file=.env scripts/import-geo.mjs <table> <file.json> [--dry-run] [--allow-overwrite] [--i-know-this-is-production]
 // (tsx is required because the script imports the shared TypeScript validators from src/core/validateContent.ts.)
 // <file.json> is an array of rows in the same shape the admin JSON editor accepts.
 // All-or-nothing: every row is validated first; if any row fails, nothing is uploaded and the exit code is 1.
@@ -11,11 +11,14 @@ import ws from 'ws';
 import { CONTENT_ENTITIES, validateContentRow } from '../src/core/validateContent.ts';
 
 const args = process.argv.slice(2);
+const KNOWN_FLAGS = ['--dry-run', '--allow-overwrite', '--i-know-this-is-production'];
 const flags = new Set(args.filter((a) => a.startsWith('--')));
 const [table, file] = args.filter((a) => !a.startsWith('--'));
 const die = (msg) => { console.error(msg); process.exit(1); };
+const usage = `usage: import-geo.mjs <${CONTENT_ENTITIES.join('|')}> <file.json> [${KNOWN_FLAGS.join('] [')}]`;
+for (const f of flags) if (!KNOWN_FLAGS.includes(f)) die(`ไม่รู้จัก flag: ${f}\n${usage}`);
 
-if (!CONTENT_ENTITIES.includes(table) || !file) die(`usage: import-geo.mjs <${CONTENT_ENTITIES.join('|')}> <file.json> [--dry-run] [--i-know-this-is-production]`);
+if (!CONTENT_ENTITIES.includes(table) || !file) die(usage);
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -54,6 +57,13 @@ rows.forEach((row, i) => {
   if (errs.length) { failed++; console.error(`แถวที่ ${i + 1} (${row?.id ?? 'ไม่มี id'}): ${errs.join(' | ')}`); }
 });
 if (failed) die(`ตรวจไม่ผ่าน ${failed}/${rows.length} แถว — ไม่ได้อัปโหลดอะไรเลย`);
+
+// Report rows whose id already exists (upsert would overwrite them).
+const { data: existing, error: exErr } = await db.from(table).select('id').in('id', rows.map((r) => r.id));
+if (exErr) die(`ตรวจ id ที่มีอยู่ไม่ได้: ${exErr.message}`);
+const existingIds = existing.map((r) => r.id);
+console.log(`id ที่มีอยู่แล้วในฐานข้อมูล: ${existingIds.length}/${rows.length}${existingIds.length ? ` (${existingIds.join(', ')})` : ''}`);
+if (existingIds.length && !flags.has('--allow-overwrite')) die('จะเขียนทับรายการเดิม — ไม่ได้อัปโหลด. ถ้าตั้งใจ ให้เพิ่ม --allow-overwrite');
 
 if (flags.has('--dry-run')) { console.log(`dry-run: ${rows.length} แถวผ่านการตรวจสอบ (${table}) — ยังไม่อัปโหลด`); process.exit(0); }
 

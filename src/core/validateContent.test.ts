@@ -46,3 +46,25 @@ describe('validateContentRow', () => {
     expect(validateContentRow('destinations', { id: 'd', name: 'x', lat: 1, lng: 2 }, [])).toEqual([]);
   });
 });
+
+describe('validateContentRow: valid rows and strict types', () => {
+  const line = { type: 'LineString', coordinates: [[100.738, 13.777], [100.74, 13.778]] };
+  const pt = { type: 'Point', coordinates: [100.74, 13.78] };
+  const route = { id: 'r', name: 'x', segment_ids: ['a'], waypoints: [{ lat: 13.7, lng: 100.7 }], distance_m: 5000 };
+  it('accepts valid segments, places, routes and water_marks', () => {
+    expect(validateContentRow('segments', { id: 's', name: 'x', geojson: line }, [])).toEqual([]);
+    expect(validateContentRow('places', { id: 'p', name: 'x', category: 'store', geojson: pt }, [])).toEqual([]);
+    expect(validateContentRow('routes', route, ['a'])).toEqual([]);
+    expect(validateContentRow('water_marks', { id: 'm', name: 'x', geojson: pt, levels: [{ level: 1, label: 'a' }] }, [])).toEqual([]);
+  });
+  it('rejects bad water_marks levels and point', () => {
+    expect(validateContentRow('water_marks', { id: 'm', name: 'x', geojson: pt, levels: [] }, [])).toContain('ต้องมีอย่างน้อย 1 ระดับ');
+    expect(validateContentRow('water_marks', { id: 'm', name: 'x', geojson: { type: 'Point', coordinates: [13.7, 100.7] }, levels: [{ level: 1, label: 'a' }] }, []).join()).toContain('ไกลจากหมู่บ้าน');
+  });
+  it('rejects malformed route element types and string distance', () => {
+    expect(validateContentRow('routes', { ...route, segment_ids: [1] }, ['a'])).not.toEqual([]);
+    expect(validateContentRow('routes', { ...route, waypoints: [{ lat: 'x', lng: 1 }] }, ['a'])).not.toEqual([]);
+    expect(validateContentRow('routes', { ...route, waypoints: [null] }, ['a'])).not.toEqual([]);
+    expect(validateContentRow('routes', { ...route, distance_m: '5000' }, ['a'])).not.toEqual([]);
+  });
+});

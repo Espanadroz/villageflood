@@ -20,6 +20,10 @@ export function ContentEditor({ snapshot, onDone }: { snapshot: Snapshot; onDone
     try { row = JSON.parse(text); } catch { return setMsgs(['JSON ไม่ถูกต้อง']); }
     const errs = validateContentRow(entity, row, snapshot.segments.map((s) => s.id));
     if (errs.length) return setMsgs(errs);
+    const existing: { id: string }[] =
+      entity === 'segments' ? snapshot.segments : entity === 'water_marks' ? snapshot.marks : entity === 'places' ? snapshot.places
+      : entity === 'destinations' ? snapshot.destinations : snapshot.routes;
+    if (existing.some((x) => x.id === row.id) && !confirm('มี id นี้อยู่แล้ว — จะเขียนทับรายการเดิม ต้องการทำต่อหรือไม่?')) return;
     const { error } = await supabase.from(entity).upsert(row);
     setMsgs([error ? `ไม่สำเร็จ: ${error.message}` : 'บันทึกแล้ว']); if (!error) onDone();
   };

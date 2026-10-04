@@ -2,7 +2,7 @@ import { GOOGLE_MAPS_MAX_WAYPOINTS, VILLAGE_CENTER } from './config';
 import { haversineM } from './geo';
 import type { LatLng } from './types';
 
-const MAX_FROM_VILLAGE_M = 30_000;
+export const MAX_FROM_VILLAGE_M = 30_000;
 const near = (lng: number, lat: number) => haversineM(VILLAGE_CENTER, { lat, lng }) <= MAX_FROM_VILLAGE_M;
 const isPos = (c: unknown): c is [number, number] =>
   Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1]);
@@ -53,8 +53,11 @@ export function validateContentRow(entity: ContentEntity, row: any, knownSegment
   if (entity === 'places') return [...validatePointGeoJSON(row.geojson), ...(PLACE_CATEGORIES.includes(row.category) ? [] : ['category ไม่ถูกต้อง'])];
   if (entity === 'water_marks') return [...validatePointGeoJSON(row.geojson), ...validateWaterLevels(row.levels)];
   if (entity === 'routes') {
-    if (!Array.isArray(row.segment_ids) || !Array.isArray(row.waypoints ?? [])) return ['segment_ids และ waypoints ต้องเป็น array'];
-    return validateRouteInput({ segmentIds: row.segment_ids, waypoints: row.waypoints ?? [], distanceM: row.distance_m }, knownSegmentIds);
+    const wps = row.waypoints ?? [];
+    if (!Array.isArray(row.segment_ids) || !row.segment_ids.every((x: unknown) => typeof x === 'string' && x)) return ['segment_ids ต้องเป็น array ของ id (ข้อความ)'];
+    if (!Array.isArray(wps) || !wps.every((w: any) => Number.isFinite(w?.lat) && Number.isFinite(w?.lng))) return ['waypoints ต้องเป็น array ของ { lat, lng } ที่เป็นตัวเลข'];
+    if (typeof row.distance_m !== 'number' || !Number.isFinite(row.distance_m)) return ['distance_m ต้องเป็นตัวเลข'];
+    return validateRouteInput({ segmentIds: row.segment_ids, waypoints: wps, distanceM: row.distance_m }, knownSegmentIds);
   }
   return typeof row.lat === 'number' && typeof row.lng === 'number' ? [] : ['ต้องมี lat และ lng'];
 }

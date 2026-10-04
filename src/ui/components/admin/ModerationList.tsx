@@ -7,28 +7,33 @@ interface Row { id: string; kind: string; target_id: string; value: string; nick
 export function ModerationList({ now, onChanged }: { now: number; onChanged?: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
-  const [msg, setMsg] = useState('');
+  const [errs, setErrs] = useState<string[]>([]);
   const load = useCallback(async () => {
+    const problems: string[] = [];
     const { data, error } = await supabase.from('reports').select('*').eq('deleted', false).order('created_at', { ascending: false }).limit(100);
-    if (error) setMsg(`โหลดรายงานไม่สำเร็จ: ${error.message}`);
-    setRows((data ?? []) as Row[]);
-    const { data: devs } = await supabase.from('devices').select('id').eq('blocked', true);
-    setBlocked(new Set((devs ?? []).map((d) => d.id)));
+    if (error) problems.push(`โหลดรายงานไม่สำเร็จ: ${error.message}`); else setRows((data ?? []) as Row[]);
+    const { data: devs, error: devErr } = await supabase.from('devices').select('id').eq('blocked', true);
+    if (devErr) problems.push(`โหลดรายการเครื่องที่ถูกบล็อกไม่สำเร็จ: ${devErr.message}`); else setBlocked(new Set((devs ?? []).map((d) => d.id)));
+    setErrs((prev) => [...prev.filter((m) => !m.startsWith('โหลด')), ...problems]);
   }, []);
   useEffect(() => { load(); }, [load]);
   const act = async (id: string, action: 'confirm' | 'delete') => {
+    if (action === 'delete' && !confirm('ลบรายงานนี้?')) return;
     const { error } = await supabase.rpc('moderate_report', { p_report: id, p_action: action });
-    setMsg(error ? `ไม่สำเร็จ: ${error.message}` : ''); load(); if (!error) onChanged?.();
+    if (error) { setErrs([`ไม่สำเร็จ: ${error.message}`]); return; }
+    setErrs([]); await load(); onChanged?.();
   };
   const block = async (device: string, value: boolean) => {
-    const { error } = await supabase.from('devices').update({ blocked: value }).eq('id', device);
-    setMsg(error ? `ไม่สำเร็จ: ${error.message}` : ''); load();
+    const { data, error } = await supabase.from('devices').update({ blocked: value }).eq('id', device).select('id');
+    if (error) { setErrs([`ไม่สำเร็จ: ${error.message}`]); return; }
+    if (!data || data.length === 0) { setErrs(['ไม่สำเร็จ: ไม่พบเครื่องนี้หรือไม่มีสิทธิ์แก้ไข']); return; }
+    setErrs([]); load();
   };
 
   return (
     <section>
       <h2>รายงานล่าสุด (ตรวจสอบ/ลบ/ยืนยัน)</h2>
-      {msg && <p className="conflict">{msg}</p>}
+      {errs.length > 0 && <ul role="alert" className="conflict">{errs.map((m) => <li key={m}>{m}</li>)}</ul>}
       {rows.map((r) => (
         <article key={r.id} className="card" style={{ borderLeft: r.location_ok || r.confirmed_by_committee ? undefined : '6px solid #d73027' }}>
           <strong>{r.kind} · {r.target_id} · {r.value}</strong> <AgeLabel at={Date.parse(r.created_at)} now={now} />
