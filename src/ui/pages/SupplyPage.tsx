@@ -7,7 +7,7 @@ import { CATEGORY_LABEL_TH, placeLatLng, supplyViews } from '../../state/supplyV
 import { useData } from '../../state/SnapshotContext';
 import { AgeLabel } from '../components/AgeLabel';
 
-const COLOR = { open: '#1a9850', out_of_stock: '#f2a900', closed: '#d73027', unreachable: '#d73027', unknown: '#8a8f98' } as const;
+const COLOR = { open: '#1a9850', out_of_stock: '#f2a900', closed: '#d73027', unreachable: '#7b2d8e', unknown: '#8a8f98' } as const;
 
 export function SupplyPage() {
   const { snapshot: s, now } = useData();
@@ -36,7 +36,7 @@ export function SupplyPage() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Link className="btn" to={`/report?kind=supply&target=${encodeURIComponent(place.id)}`}>รายงานสถานะ</Link>
               {ll && (
-                <a className="btn secondary" style={{ background: '#fff', color: 'var(--brand)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                <a className="btn btn--secondary"
                   href={buildGoogleMapsSearchUrl(ll)} target="_blank" rel="noreferrer noopener">เปิดแผนที่</a>
               )}
             </div>

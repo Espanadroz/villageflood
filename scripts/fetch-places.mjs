@@ -1,7 +1,7 @@
 // scripts/fetch-places.mjs — one-off. Run: node scripts/fetch-places.mjs
 // Writes data/places.candidates.json for the committee to review and prune by hand.
 // (OSM Overpass is fine for one-off curation; never use it as a live backend. Google Places data may not be cached, so it is not used.)
-import { mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 
 const CENTER = { lat: 13.7771, lng: 100.73883 }; // replace with the village gate once known
 const RADIUS_M = 6000;
@@ -52,6 +52,19 @@ const places = body.elements
 
 if (places.length === 0) fail('Overpass returned no named candidates — nothing written');
 
+if (typeof body.remark === 'string' && body.remark.trim()) {
+  console.warn(`WARNING: Overpass remark: "${body.remark.trim()}" — results may be truncated.`);
+}
+
+const MAIN = 'data/places.candidates.json';
+const exists = await access(MAIN).then(() => true, () => false);
+const force = process.argv.includes('--force');
+let out = MAIN;
+let why = '';
+if (exists && !force) {
+  out = `data/places.candidates.${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  why = ` (${MAIN} already exists and may be hand-pruned; pass --force to overwrite it)`;
+}
 await mkdir('data', { recursive: true });
-await writeFile('data/places.candidates.json', JSON.stringify(places, null, 2));
-console.log(`${places.length} candidates written to data/places.candidates.json — review with the committee, delete what you don't want, then load with scripts/import-geo.mjs`);
+await writeFile(out, JSON.stringify(places, null, 2));
+console.log(`${places.length} candidates written to ${out}${why} — review with the committee, delete what you don't want, then load with scripts/import-geo.mjs`);

@@ -23,7 +23,7 @@ export function supplyViews(s: Snapshot, now: number, category: PlaceCategory | 
     .map((place) => {
       const ll = placeLatLng(place);
       const d = ll ? haversineM(s.settings.origin, ll) : Infinity;
-      return { place, status: placeStates[place.id]!, distanceM: Number.isFinite(d) ? d : Infinity };
+      return { place, status: placeStates[place.id] ?? { value: 'unknown' as const, asOf: null, conflict: false, basisReportId: null }, distanceM: Number.isFinite(d) ? d : Infinity };
     })
     .sort((a, b) => {
       const o = ORDER[a.status.value] - ORDER[b.status.value];

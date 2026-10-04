@@ -16,5 +16,7 @@ body { margin:0; font:16px/1.5 system-ui,"Noto Sans Thai",sans-serif; background
 .conflict { color:#b42318; font-weight:600; }
 .age { font-size:13px; color:#5a6a7a; } .age--stale { color:#b42318; font-weight:600; } .age--none { color:#8a8f98; }
 button, .btn { font:inherit; padding:10px 14px; border-radius:10px; border:1px solid var(--brand); background:var(--brand); color:#fff; min-height:44px; }
+.btn { text-decoration:none; display:inline-flex; align-items:center; }
+.btn--secondary { background:#fff; color:var(--brand); }
 button.secondary { background:#fff; color:var(--brand); }
 button:disabled { opacity:.5; }
