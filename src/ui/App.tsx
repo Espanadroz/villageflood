@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { SnapshotProvider, useData } from '../state/SnapshotContext';
 import { Layout } from './Layout';
+import { ReportPage } from './pages/ReportPage';
 
 import { Disclaimer } from './components/Disclaimer';
 import type { Snapshot } from '../data/types';
@@ -26,6 +27,7 @@ export function App() {
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<div className="page"><h1>พอร์ทัลน้ำท่วมหมู่บ้าน</h1></div>} />
+              <Route path="report" element={<ReportPage />} />
             </Route>
           </Routes>
         </Gate>
