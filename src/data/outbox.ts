@@ -16,45 +16,53 @@ export function createOutbox(deps: { store: KV; send: (item: OutboxItem) => Prom
   let inflightPromise: Promise<{ sent: number; failed: number; stoppedOnRetry: boolean }> | null = null;
   let dirty = false;
 
-  const doFlush = async (): Promise<{ sent: number; failed: number; stoppedOnRetry: boolean }> => {
-    try {
-      const result = { sent: 0, failed: 0, stoppedOnRetry: false };
-      for (const item of await box.pending()) {
-        let sendErr: Error | null = null;
-        try {
-          await send(item);
-        } catch (e) {
-          sendErr = e as Error;
-        }
+  type FlushResult = { sent: number; failed: number; stoppedOnRetry: boolean };
 
-        if (sendErr) {
-          const err = sendErr instanceof SubmitError ? sendErr : new SubmitError(sendErr.message, false);
-          if (err.retryable) {
-            await store.set(PENDING + item.id, { ...item, attempts: item.attempts + 1 });
-            result.stoppedOnRetry = true;
-            break;
-          }
-          await store.set(FAILED + item.id, { item, reason: err.message } satisfies FailedItem);
-          await store.del(PENDING + item.id);
-          result.failed++;
-        } else {
-          await store.del(PENDING + item.id);
-          result.sent++;
+  const runOnce = async (): Promise<FlushResult> => {
+    const result: FlushResult = { sent: 0, failed: 0, stoppedOnRetry: false };
+    for (const item of await box.pending()) {
+      let sendErr: Error | null = null;
+      try {
+        await send(item);
+      } catch (e) {
+        sendErr = e as Error;
+      }
+
+      if (sendErr) {
+        const err = sendErr instanceof SubmitError ? sendErr : new SubmitError(sendErr.message, false);
+        if (err.retryable) {
+          await store.set(PENDING + item.id, { ...item, attempts: item.attempts + 1 });
+          result.stoppedOnRetry = true;
+          break;
         }
+        await store.set(FAILED + item.id, { item, reason: err.message } satisfies FailedItem);
+        await store.del(PENDING + item.id);
+        result.failed++;
+      } else {
+        await store.del(PENDING + item.id);
+        result.sent++;
       }
-      // If dirty flag was set during this run, queue another run and merge results
-      if (dirty) {
+    }
+    return result;
+  };
+
+  // Single loop (no recursion): at most one run at a time; flush() during a run sets `dirty`
+  // to request another pass over the new snapshot. State is cleared once, in one finally.
+  const doFlush = async (): Promise<FlushResult> => {
+    const total: FlushResult = { sent: 0, failed: 0, stoppedOnRetry: false };
+    try {
+      do {
         dirty = false;
-        const followUpResult = await doFlush();
-        return {
-          sent: result.sent + followUpResult.sent,
-          failed: result.failed + followUpResult.failed,
-          stoppedOnRetry: result.stoppedOnRetry || followUpResult.stoppedOnRetry
-        };
-      }
-      return result;
+        const r = await runOnce();
+        total.sent += r.sent;
+        total.failed += r.failed;
+        total.stoppedOnRetry = total.stoppedOnRetry || r.stoppedOnRetry;
+        if (r.stoppedOnRetry) break; // don't hammer a retryable failure; next trigger retries
+      } while (dirty);
+      return total;
     } finally {
       inflightPromise = null;
+      dirty = false;
     }
   };
 

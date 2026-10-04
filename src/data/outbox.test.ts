@@ -132,3 +132,80 @@ it('(c) two simultaneous flush calls with one item: send called exactly once, re
   expect(result.sent).toBe(1);
   expect(result.failed).toBe(0);
 });
+
+const tick = () => new Promise((r) => setTimeout(r, 5));
+
+it('(d) flush() during a follow-up pass never starts a concurrent run', async () => {
+  let active = 0, maxActive = 0;
+  const sendCounts: Record<string, number> = {};
+  const gates: Record<string, () => void> = {};
+  const box = createOutbox({
+    store: memoryKV(),
+    send: async (i) => {
+      active++; maxActive = Math.max(maxActive, active);
+      sendCounts[i.id] = (sendCounts[i.id] ?? 0) + 1;
+      await new Promise<void>((r) => { gates[i.id] = r; });
+      active--;
+    },
+  });
+  await box.add(item('a', 1));
+  const p1 = box.flush();
+  await tick();
+  await box.add(item('b', 2));
+  expect(box.flush()).toBe(p1); // sets dirty
+  gates['a']!(); // first pass done -> follow-up pass starts, sending b
+  await tick();
+  expect(gates['b']).toBeDefined(); // follow-up pass active
+  await box.add(item('c', 3));
+  const p3 = box.flush(); // during follow-up pass
+  expect(p3).toBe(p1);
+  await tick();
+  gates['b']!();
+  await tick();
+  expect(box.flush()).toBe(p1); // during the third pass too
+  gates['c']!();
+  const result = await p1;
+  expect(maxActive).toBe(1);
+  expect(sendCounts).toEqual({ a: 1, b: 1, c: 1 });
+  expect(result.sent).toBe(3);
+  expect(await box.pending()).toHaveLength(0);
+});
+it('(e) a run that throws leaves no stale dirty: next flush does exactly one pass', async () => {
+  const base = memoryKV();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let throwOnce = false;
+  let sendCalls = 0;
+  const box = createOutbox({
+    store: { ...base, set: async (k, v) => { if (throwOnce) { throwOnce = false; throw new Error('boom'); } return base.set(k, v); } },
+    send: async () => { sendCalls++; if (sendCalls === 1) await gate; throw new SubmitError('offline', true); },
+  });
+  await box.add(item('a', 1));
+  const p1 = box.flush();
+  await tick();
+  box.flush(); // dirty = true
+  throwOnce = true; // retryable path's store.set rejects
+  release();
+  await expect(p1).rejects.toThrow('boom');
+  sendCalls = 100;
+  const r = await box.flush();
+  expect(sendCalls).toBe(101); // exactly one pass for the single pending item
+  expect(r.stoppedOnRetry).toBe(true);
+});
+it('(f) retryable pass with dirty set does not loop again', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let sendCalls = 0;
+  const box = createOutbox({
+    store: memoryKV(),
+    send: async () => { sendCalls++; await gate; throw new SubmitError('offline', true); },
+  });
+  await box.add(item('a', 1));
+  const p1 = box.flush();
+  await tick();
+  box.flush(); // dirty
+  release();
+  const r = await p1;
+  expect(sendCalls).toBe(1);
+  expect(r).toEqual({ sent: 0, failed: 0, stoppedOnRetry: true });
+});

@@ -19,6 +19,16 @@ describe('classifyUploadError', () => {
     expect(result.ok).toBe(false);
     expect(result.error?.retryable).toBe(false);
   });
+  it("treats string statusCode '503' as retryable", () => {
+    const result = classifyUploadError({ message: 'Service Unavailable', statusCode: '503' });
+    expect(result.ok).toBe(false);
+    expect(result.error?.retryable).toBe(true);
+  });
+  it("treats string statusCode '413' as permanent", () => {
+    const result = classifyUploadError({ message: 'Payload Too Large', statusCode: '413' });
+    expect(result.ok).toBe(false);
+    expect(result.error?.retryable).toBe(false);
+  });
   it('treats network errors as retryable', () => {
     const result = classifyUploadError({ message: 'Failed to fetch' });
     expect(result.ok).toBe(false);
