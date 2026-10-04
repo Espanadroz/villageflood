@@ -20,12 +20,15 @@ export function createOutbox(deps: { store: KV; send: (item: OutboxItem) => Prom
     try {
       const result = { sent: 0, failed: 0, stoppedOnRetry: false };
       for (const item of await box.pending()) {
+        let sendErr: Error | null = null;
         try {
           await send(item);
-          await store.del(PENDING + item.id);
-          result.sent++;
         } catch (e) {
-          const err = e instanceof SubmitError ? e : new SubmitError((e as Error).message, false);
+          sendErr = e as Error;
+        }
+
+        if (sendErr) {
+          const err = sendErr instanceof SubmitError ? sendErr : new SubmitError(sendErr.message, false);
           if (err.retryable) {
             await store.set(PENDING + item.id, { ...item, attempts: item.attempts + 1 });
             result.stoppedOnRetry = true;
@@ -34,12 +37,20 @@ export function createOutbox(deps: { store: KV; send: (item: OutboxItem) => Prom
           await store.set(FAILED + item.id, { item, reason: err.message } satisfies FailedItem);
           await store.del(PENDING + item.id);
           result.failed++;
+        } else {
+          await store.del(PENDING + item.id);
+          result.sent++;
         }
       }
-      // If dirty flag was set during this run, queue another run
+      // If dirty flag was set during this run, queue another run and merge results
       if (dirty) {
         dirty = false;
-        return { ...result, ...await doFlush() };
+        const followUpResult = await doFlush();
+        return {
+          sent: result.sent + followUpResult.sent,
+          failed: result.failed + followUpResult.failed,
+          stoppedOnRetry: result.stoppedOnRetry || followUpResult.stoppedOnRetry
+        };
       }
       return result;
     } finally {

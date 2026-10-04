@@ -67,62 +67,68 @@ it('retryFailed moves a failed item back to pending', async () => {
   expect(pending.map((p) => p.id)).toEqual(['bad']);
   expect(pending[0]!.attempts).toBe(0);
 });
-it('clears inflight promise in finally so a retryable error does not wedge later flushes', async () => {
-  let retryCount = 0;
+it('(a) store failure: rejected flush() is cleared in finally so later flush() works', async () => {
+  const baseStore = memoryKV();
+  let throwOnce = true;
   const box = createOutbox({
-    store: memoryKV(),
-    send: async (i) => {
-      if (i.id === 'a' && retryCount === 0) {
-        retryCount++;
-        throw new SubmitError('offline', true); // First attempt: retryable error
-      }
-      // Second attempt: success
+    store: {
+      ...baseStore,
+      del: async (k) => { if (throwOnce) { throwOnce = false; throw new Error('store error'); } return baseStore.del(k); }
     },
+    send: async () => {}
   });
   await box.add(item('a', 1));
   const p1 = box.flush();
-  expect(await p1).toEqual({ sent: 0, failed: 0, stoppedOnRetry: true });
-  // inflight promise was cleared in finally, so new flush works
+  await expect(p1).rejects.toThrow('store error');
+  // inflight promise was cleared in finally (no endless loop), so a new flush can start
+  // 'a' is still pending because del failed, so p2 will send both 'a' and 'b'
+  await box.add(item('b', 2));
   const p2 = box.flush();
-  expect(await p2).toEqual({ sent: 1, failed: 0, stoppedOnRetry: false });
+  expect(await p2).toEqual({ sent: 2, failed: 0, stoppedOnRetry: false });
 });
-it('dirty flag causes follow-up run to process new items', async () => {
-  let runCount = 0;
-  const itemsSent: string[] = [];
+it('(b) mid-run add with manual deferred: merged result has sent===2, items sent exactly once in order', async () => {
+  let resolveWait: (() => void) | null = null;
+  const waitDeferred = new Promise<void>((r) => { resolveWait = r; });
+  const sendLog: string[] = [];
   const box = createOutbox({
     store: memoryKV(),
     send: async (i) => {
-      itemsSent.push(i.id);
+      sendLog.push(i.id);
       if (i.id === 'a') {
-        // Simulate adding an item while first send is happening
-        await box.add(item('b', 2));
-        // Trigger another flush - this will set dirty=true
-        box.flush();
+        await waitDeferred;
       }
     }
   });
   await box.add(item('a', 1));
-  const result = await box.flush();
-  expect(itemsSent.length).toBeGreaterThanOrEqual(1);
-  expect(itemsSent[0]).toBe('a'); // First item sent
-  // If dirty flag works, second doFlush should send 'b'
-  // This test is less strict because the timing of follow-up runs is implementation-dependent
+  const p1 = box.flush();
+  // While 'a' send is pending, add 'b' and call flush again
+  await new Promise(r => setTimeout(r, 10));
+  await box.add(item('b', 2));
+  const p2 = box.flush();
+  expect(p2).toBe(p1); // same promise: p2 sets dirty flag
+  // Now resolve the deferred to let 'a' complete
+  resolveWait!();
+  const result = await p1;
+  // Verify: both items sent in order, merged result
+  expect(sendLog).toEqual(['a', 'b']);
+  expect(result.sent).toBe(2); // proves follow-up run and summing
+  expect(result.failed).toBe(0);
+  expect(result.stoppedOnRetry).toBe(false);
 });
-it('two simultaneous flush calls with one pending item return same promise', async () => {
-  const sent: string[] = [];
+it('(c) two simultaneous flush calls with one item: send called exactly once, result sent===1', async () => {
+  let sendCount = 0;
   const box = createOutbox({
     store: memoryKV(),
     send: async (i) => {
-      sent.push(i.id);
-      await new Promise(r => setTimeout(r, 5));
+      sendCount++;
     }
   });
   await box.add(item('x', 1));
   const p1 = box.flush();
   const p2 = box.flush();
-  expect(p1).toBe(p2); // same promise object
+  expect(p1).toBe(p2); // same promise
   const result = await p1;
-  // Since both calls returned the same promise, they both get the same result
-  expect(result.sent).toBeGreaterThanOrEqual(0);
-  expect(sent.includes('x')).toBe(true); // item was sent at some point
+  expect(sendCount).toBe(1); // send called exactly once
+  expect(result.sent).toBe(1);
+  expect(result.failed).toBe(0);
 });

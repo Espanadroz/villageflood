@@ -16,27 +16,28 @@ const PERMANENT = ['evidence_required', 'invalid_value', 'unknown_target', 'devi
 export function classifyUploadError(err: { message: string; statusCode?: string | number }): { ok: boolean; error?: SubmitError } {
   const code = typeof err.statusCode === 'string' ? parseInt(err.statusCode) : err.statusCode;
   if (code === 409 && /already exists|duplicate/i.test(err.message)) return { ok: true };
-  return { ok: false, error: classifySubmitError({ message: err.message, status: code }) };
+  return { ok: false, error: classifySubmitError(err.message, { httpStatus: code }) };
 }
 
-export function classifySubmitError(err: { message: string; code?: string; status?: number }): SubmitError {
-  const message = err.message;
-  const status = typeof err.status === 'number' && isFinite(err.status) ? err.status : undefined;
+export function classifySubmitError(message: string, opts?: { httpStatus?: number }): SubmitError {
+  const httpStatus = typeof opts?.httpStatus === 'number' && isFinite(opts.httpStatus) ? opts.httpStatus : undefined;
 
-  // If there's a SQLSTATE code (database error), always permanent
-  if (err.code) {
-    return new SubmitError(message, false);
-  }
-
-  // Check for 5xx or 429 status codes as retryable (only when no SQLSTATE code)
-  if (status && (status >= 500 || status === 429)) {
+  // (a) Check HTTP status first: 5xx or 429 => retryable
+  if (httpStatus && (httpStatus >= 500 || httpStatus === 429)) {
     return new SubmitError(message, true);
   }
 
+  // (b) Check message for patterns (NEVER use error.code/SQLSTATE)
   if (PERMANENT.some((c) => message.includes(c))) return new SubmitError(message, false);
   if (message.includes('rate_limited')) return new SubmitError(message, true);
   if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) return new SubmitError(message, true);
+
+  // (c) Anything else => permanent
   return new SubmitError(message, false);
+}
+
+export function classifyRpcFailure(res: { error: { message: string; code?: string }; status?: number }): SubmitError {
+  return classifySubmitError(res.error.message, { httpStatus: res.status });
 }
 
 export function describeSubmitError(message: string): string {
@@ -73,7 +74,7 @@ export async function sendItem(item: OutboxItem): Promise<void> {
     p_client_id: item.id,
   });
   if (res.error) {
-    const err = res.error as unknown as { message: string; code?: string; status?: number };
-    throw classifySubmitError({ message: err.message, code: err.code, status: err.status });
+    const rpcRes = res as unknown as { error: { message: string; code?: string }; status?: number };
+    throw classifyRpcFailure(rpcRes);
   }
 }

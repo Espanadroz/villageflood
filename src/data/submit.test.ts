@@ -1,4 +1,4 @@
-import { classifySubmitError, classifyUploadError, describeSubmitError } from './submit';
+import { classifySubmitError, classifyUploadError, classifyRpcFailure, describeSubmitError } from './submit';
 
 describe('classifyUploadError', () => {
   it('treats 409 "already exists" as ok', () => {
@@ -28,26 +28,46 @@ describe('classifyUploadError', () => {
 
 describe('classifySubmitError', () => {
   it.each(['Failed to fetch', 'TypeError: Load failed', 'NetworkError when attempting to fetch resource', 'rate_limited'])(
-    'treats "%s" as retryable', (m) => expect(classifySubmitError({ message: m }).retryable).toBe(true));
+    'treats "%s" as retryable', (m) => expect(classifySubmitError(m).retryable).toBe(true));
   it.each(['evidence_required', 'invalid_value', 'unknown_target', 'device_blocked', 'committee_only', 'nickname_required', 'invalid_media', 'unknown_report', 'not_a_reporter'])(
-    'treats "%s" as permanent', (m) => expect(classifySubmitError({ message: m }).retryable).toBe(false));
+    'treats "%s" as permanent', (m) => expect(classifySubmitError(m).retryable).toBe(false));
   it('treats real HTTP 503 as retryable', () => {
-    expect(classifySubmitError({ message: 'error', status: 503 }).retryable).toBe(true);
+    expect(classifySubmitError('error', { httpStatus: 503 }).retryable).toBe(true);
   });
   it('treats real HTTP 502 as retryable', () => {
-    expect(classifySubmitError({ message: 'error', status: 502 }).retryable).toBe(true);
+    expect(classifySubmitError('error', { httpStatus: 502 }).retryable).toBe(true);
   });
   it('treats real HTTP 429 as retryable', () => {
-    expect(classifySubmitError({ message: 'error', status: 429 }).retryable).toBe(true);
+    expect(classifySubmitError('error', { httpStatus: 429 }).retryable).toBe(true);
   });
-  it('treats SQLSTATE 42501 (permission denied) as permanent, ignoring status field', () => {
-    expect(classifySubmitError({ message: 'x', code: '42501', status: 503 }).retryable).toBe(false);
-  });
-  it('treats SQLSTATE 23505 (unique violation) as permanent', () => {
-    expect(classifySubmitError({ message: 'x', code: '23505' }).retryable).toBe(false);
+  it('treats rate_limited with no httpStatus as retryable', () => {
+    expect(classifySubmitError('rate_limited').retryable).toBe(true);
   });
   it('treats unknown server errors as permanent so a bad item cannot loop forever', () => {
-    expect(classifySubmitError({ message: 'something odd' }).retryable).toBe(false);
+    expect(classifySubmitError('something odd').retryable).toBe(false);
+  });
+});
+describe('classifyRpcFailure', () => {
+  it('treats {message:"new row violates…", code:"42501", status:403} as permanent', () => {
+    expect(classifyRpcFailure({ error: { message: 'new row violates unique constraint', code: '42501' }, status: 403 }).retryable).toBe(false);
+  });
+  it('treats {message:"...", code:"23505", status:409} as permanent', () => {
+    expect(classifyRpcFailure({ error: { message: 'duplicate key', code: '23505' }, status: 409 }).retryable).toBe(false);
+  });
+  it('treats {message:"", code:"", status:503} as retryable (httpStatus wins)', () => {
+    expect(classifyRpcFailure({ error: { message: '', code: '' }, status: 503 }).retryable).toBe(true);
+  });
+  it('treats {…, status:502} as retryable', () => {
+    expect(classifyRpcFailure({ error: { message: 'x', code: 'ABC' }, status: 502 }).retryable).toBe(true);
+  });
+  it('treats {…, status:429} as retryable', () => {
+    expect(classifyRpcFailure({ error: { message: 'x', code: 'ABC' }, status: 429 }).retryable).toBe(true);
+  });
+  it('treats {error:{message:"rate_limited", code:"P0001"}, status:400} as retryable (message wins)', () => {
+    expect(classifyRpcFailure({ error: { message: 'rate_limited', code: 'P0001' }, status: 400 }).retryable).toBe(true);
+  });
+  it('treats {error:{message:"device_blocked", code:"P0001"}, status:400} as permanent (message wins)', () => {
+    expect(classifyRpcFailure({ error: { message: 'device_blocked', code: 'P0001' }, status: 400 }).retryable).toBe(false);
   });
 });
 describe('describeSubmitError', () => {

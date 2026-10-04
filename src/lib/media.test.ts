@@ -13,6 +13,11 @@ describe('fitWithin', () => {
   it('scales portrait by the long side', () => expect(fitWithin(3000, 4000, 1280)).toEqual({ w: 960, h: 1280 }));
 });
 describe('readVideoDuration (stubbed video element)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it('rejects with video_unreadable when duration is not finite', async () => {
     const originalCreate = document.createElement;
     const mockVideo = {
@@ -31,7 +36,6 @@ describe('readVideoDuration (stubbed video element)', () => {
     });
     const file = new File([], 'test.mp4', { type: 'video/mp4' });
     await expect(readVideoDuration(file, 100)).rejects.toThrow('video_unreadable');
-    vi.restoreAllMocks();
   });
   it('rejects with video_unreadable when duration is zero', async () => {
     const originalCreate = document.createElement;
@@ -51,7 +55,6 @@ describe('readVideoDuration (stubbed video element)', () => {
     });
     const file = new File([], 'test.mp4', { type: 'video/mp4' });
     await expect(readVideoDuration(file, 100)).rejects.toThrow('video_unreadable');
-    vi.restoreAllMocks();
   });
   it('rejects with video_timeout when metadata does not load within timeout', async () => {
     const originalCreate = document.createElement;
@@ -73,7 +76,5 @@ describe('readVideoDuration (stubbed video element)', () => {
     const promise = readVideoDuration(file, 100);
     vi.advanceTimersByTime(101);
     await expect(promise).rejects.toThrow('video_timeout');
-    vi.useRealTimers();
-    vi.restoreAllMocks();
   });
 });
