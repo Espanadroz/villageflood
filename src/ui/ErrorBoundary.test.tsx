@@ -39,3 +39,43 @@ it('lazyRetry: a factory that rejects once then resolves renders after retry', a
   expect(await screen.findByText('lazy ok')).toBeInTheDocument();
   expect(calls).toBe(2);
 });
+
+it('resets the boundary on navigation so another tab renders', async () => {
+  render(
+    <MemoryRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Bomb />} />
+          <Route path="report" element={<p>healthy page</p>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(screen.getByText(FALLBACK)).toBeInTheDocument();
+  expect(screen.getByText(DISCLAIMER_TH)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('link', { name: 'รายงาน' }));
+  expect(screen.getByText('healthy page')).toBeInTheDocument();
+  expect(screen.queryByText(FALLBACK)).toBeNull();
+  expect(screen.getByText(DISCLAIMER_TH)).toBeInTheDocument();
+});
+
+describe('chunk-load failures', () => {
+  const reload = vi.fn();
+  beforeEach(() => { reload.mockReset(); vi.stubGlobal('location', { ...window.location, reload }); });
+  afterEach(() => vi.unstubAllGlobals());
+  const Boom = ({ msg }: { msg: string }) => { throw new Error(msg); };
+
+  it('reloads the page on retry for a dynamic-import failure', async () => {
+    render(<ErrorBoundary><Boom msg="Failed to fetch dynamically imported module: /assets/x.js" /></ErrorBoundary>);
+    await userEvent.click(screen.getByRole('button', { name: 'ลองอีกครั้ง' }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+  it('retries in place (no reload) for an ordinary render error', async () => {
+    broken = true;
+    render(<ErrorBoundary><Bomb /></ErrorBoundary>);
+    broken = false;
+    await userEvent.click(screen.getByRole('button', { name: 'ลองอีกครั้ง' }));
+    expect(reload).not.toHaveBeenCalled();
+    expect(screen.getByText('ok page')).toBeInTheDocument();
+  });
+});

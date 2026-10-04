@@ -17,12 +17,17 @@ export function retryFailedLazies(): void {
   failed.clear();
 }
 
+const CHUNK_ERROR = /dynamically imported module|Importing a module script failed|ChunkLoadError|Failed to fetch dynamically imported/i;
+
 interface State { error: Error | null }
 export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   state: State = { error: null };
   static getDerivedStateFromError(error: Error): State { return { error }; }
   componentDidCatch(error: Error, info: ErrorInfo) { console.error('page failed', error, info.componentStack); }
-  retry = () => { retryFailedLazies(); this.setState({ error: null }); };
+  retry = () => {
+    // a failed dynamic-import URL is cached by the browser, so only a reload can recover
+    if (CHUNK_ERROR.test(this.state.error?.message ?? '')) { location.reload(); return; }
+    retryFailedLazies(); this.setState({ error: null }); };
   render() {
     if (!this.state.error) return this.props.children;
     return (
