@@ -1,2 +1,6 @@
 import { createRoot } from 'react-dom/client';
-createRoot(document.getElementById('root')!).render(<p>กำลังเริ่มระบบ…</p>);
+import 'maplibre-gl/dist/maplibre-gl.css';
+import './ui/styles.css';
+import { App } from './ui/App';
+
+createRoot(document.getElementById('root')!).render(<App />);
