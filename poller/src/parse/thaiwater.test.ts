@@ -26,3 +26,9 @@ it('skips rows with an invalid timestamp and nulls non-numeric coordinates', () 
   expect(out).toHaveLength(1);
   expect(out[0]).toMatchObject({ stationId: '6', lat: null, lng: null });
 });
+
+it('drops readings observed more than 10 minutes in the future', () => {
+  // first row is 2026-10-04 14:20 Thai = 07:20Z
+  expect(parseThaiWater(tw, new Date('2026-10-04T07:10:00Z'))).toHaveLength(1);
+  expect(parseThaiWater(tw, new Date('2026-10-04T07:09:00Z'))).toEqual([]);
+});

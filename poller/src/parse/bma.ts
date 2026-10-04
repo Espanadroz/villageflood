@@ -1,3 +1,4 @@
+import { MAX_FUTURE_SKEW_MS } from '../../../src/core/config';
 import { WATCH } from '../config';
 import type { Reading } from '../types';
 
@@ -12,7 +13,9 @@ export function parseDotNetDate(s: string | null | undefined): Date | null {
 // BMA uses -99 (and similar <= -99) as a "no gauge / no data" sentinel; never store it as a real reading.
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > -99 ? v : null);
 
-export function parseBmaCanal(json: unknown): Reading[] {
+const inFuture = (d: Date, now: Date) => d.getTime() - now.getTime() > MAX_FUTURE_SKEW_MS;
+
+export function parseBmaCanal(json: unknown, now: Date = new Date()): Reading[] {
   const stations = (json as { waterStation?: unknown[] } | null)?.waterStation;
   if (!Array.isArray(stations)) return [];
   const out: Reading[] = [];
@@ -22,7 +25,7 @@ export function parseBmaCanal(json: unknown): Reading[] {
     if (!info || !code || !(WATCH.canal as readonly string[]).includes(code)) continue;
     const last = info.water_level_last ?? {};
     const observedAt = parseDotNetDate(last.site_timestamp);
-    if (!observedAt) continue;
+    if (!observedAt || inFuture(observedAt, now)) continue;
     for (const metric of ['wl_in', 'wl_out01'] as const) {
       const value = num(last[metric]);
       if (value === null) continue;
@@ -40,14 +43,14 @@ const nonNeg = (v: unknown): number | null => {
   return n !== null && n >= 0 ? n : null; // rainfall can't be negative: any negative is a sentinel
 };
 
-export function parseBmaRain(json: unknown): Reading[] {
+export function parseBmaRain(json: unknown, now: Date = new Date()): Reading[] {
   if (!Array.isArray(json)) return [];
   const out: Reading[] = [];
   for (const s of json as Array<Record<string, any>>) {
     const code = s?.rain_code as string | undefined;
     if (!code || !(WATCH.rain as readonly string[]).includes(code)) continue;
     const observedAt = parseDotNetDate(s.site_timestamp);
-    if (!observedAt) continue;
+    if (!observedAt || inFuture(observedAt, now)) continue;
     for (const metric of ['rf1hr', 'rf24hr'] as const) {
       const value = nonNeg(s[metric]);
       if (value === null) continue;

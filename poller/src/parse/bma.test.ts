@@ -80,3 +80,19 @@ describe('BMA no-data guards', () => {
     expect(out.map((r) => r.metric)).toEqual(['rf1hr']);
   });
 });
+
+describe('future timestamps (> 10 min ahead) are rejected', () => {
+  const T = 1791108300000;
+  const now = (offsetMin: number) => new Date(T - offsetMin * 60_000);
+  const st = { waterStation: [{ water_station_info: { water_code: 'WL.STN.02', water_shortname: 'x', latitude: 1, longitude: 1,
+    water_level_last: { wl_in: 0.5, wl_out01: null, site_timestamp: `/Date(${T})/` } } }] };
+  const rain = [{ rain_code: 'RF.MBR.03', rain_shortname: 'x', latitude: 1, longitude: 1, site_timestamp: `/Date(${T})/`, rf1hr: 1, rf24hr: 2 }];
+  it('canal: 10 min ahead kept, 11 min ahead dropped', () => {
+    expect(parseBmaCanal(st, now(10))).toHaveLength(1);
+    expect(parseBmaCanal(st, now(11))).toEqual([]);
+  });
+  it('rain: 11 min ahead dropped', () => {
+    expect(parseBmaRain(rain, now(0))).toHaveLength(2);
+    expect(parseBmaRain(rain, now(11))).toEqual([]);
+  });
+});

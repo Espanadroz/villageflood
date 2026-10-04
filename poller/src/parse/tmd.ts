@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { WARNING_MAX_AGE_MS } from '../../../src/core/config';
+import { MAX_FUTURE_SKEW_MS, WARNING_MAX_AGE_MS } from '../../../src/core/config';
 import type { Warning } from '../types';
 
 export function parseTmdCap(xml: string, now: Date): Warning[] {
@@ -11,6 +11,7 @@ export function parseTmdCap(xml: string, now: Date): Warning[] {
     if (it?.pubDate == null) continue;
     const issuedAt = new Date(String(it.pubDate));
     if (Number.isNaN(issuedAt.getTime()) || now.getTime() - issuedAt.getTime() > WARNING_MAX_AGE_MS) continue;
+    if (issuedAt.getTime() - now.getTime() > MAX_FUTURE_SKEW_MS) continue; // future stamp: invalid
     const id = String(it.guid?.['#text'] ?? it.guid ?? it.link ?? '');
     if (!id) continue; // no stable id: skip rather than guess
     const body = String(it.description ?? '');

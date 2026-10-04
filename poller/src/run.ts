@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { pathToFileURL } from 'node:url';
 import ws from 'ws';
 import { MEDIA_RETENTION_DAYS } from '../../src/core/config';
-import { deleteExpiredMedia } from './cleanup';
+import { deleteExpiredMedia, deleteOrphanMedia } from './cleanup';
 import { fetchBmaCanal, fetchBmaRain, fetchLongdo, fetchThaiWater, fetchTmdCap } from './fetch';
 import { parseBmaCanal, parseBmaRain } from './parse/bma';
 import { parseLongdo } from './parse/longdo';
@@ -11,11 +11,13 @@ import { parseThaiWater } from './parse/thaiwater';
 import { parseTmdCap } from './parse/tmd';
 import { storeIncidents, storeReadings, storeWarnings } from './store';
 
-const SOURCE_JOBS = 5; // the first five jobs are agency sources; media_cleanup (last) doesn't affect the exit code
+const SOURCE_JOBS = 5; // the first five jobs are agency sources; the last job is media_cleanup
 
-/** Non-zero if ANY source job failed, so cron/monitoring sees partial outages. */
-export function exitCodeFor(results: PromiseSettledResult<unknown>[]): 0 | 1 {
-  return results.slice(0, SOURCE_JOBS).some((r) => r.status === 'rejected') ? 1 : 0;
+/** 1 if ANY source job failed (partial outage); otherwise 2 if only media cleanup failed; 0 if all ok. */
+export function exitCodeFor(results: PromiseSettledResult<unknown>[]): 0 | 1 | 2 {
+  if (results.slice(0, SOURCE_JOBS).some((r) => r.status === 'rejected')) return 1;
+  if (results.slice(SOURCE_JOBS).some((r) => r.status === 'rejected')) return 2;
+  return 0;
 }
 
 export async function runOnce(now = new Date()): Promise<void> {
@@ -25,12 +27,16 @@ export async function runOnce(now = new Date()): Promise<void> {
   });
   // Each source is independent: one failing source must not stop the others, and failures are logged, not hidden.
   const jobs: Array<[string, () => Promise<unknown>]> = [
-    ['bma_canal', async () => storeReadings(db, parseBmaCanal(await fetchBmaCanal()))],
-    ['bma_rain', async () => storeReadings(db, parseBmaRain(await fetchBmaRain()))],
-    ['thaiwater', async () => storeReadings(db, parseThaiWater(await fetchThaiWater()))],
+    ['bma_canal', async () => storeReadings(db, parseBmaCanal(await fetchBmaCanal(), now))],
+    ['bma_rain', async () => storeReadings(db, parseBmaRain(await fetchBmaRain(), now))],
+    ['thaiwater', async () => storeReadings(db, parseThaiWater(await fetchThaiWater(), now))],
     ['tmd_cap', async () => storeWarnings(db, parseTmdCap(await fetchTmdCap(), now))],
     ['longdo', async () => storeIncidents(db, parseLongdo(await fetchLongdo(), now))],
-    ['media_cleanup', async () => console.log(`media removed: ${await deleteExpiredMedia(db, now, MEDIA_RETENTION_DAYS)}`)],
+    ['media_cleanup', async () => {
+      const linked = await deleteExpiredMedia(db, now, MEDIA_RETENTION_DAYS);
+      const orphans = await deleteOrphanMedia(db, now, MEDIA_RETENTION_DAYS);
+      console.log(`media removed: ${linked} (report-linked), ${orphans} (by object age)`);
+    }],
   ];
   const results = await Promise.allSettled(jobs.map(([, fn]) => fn()));
   results.forEach((r, i) => {

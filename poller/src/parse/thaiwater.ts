@@ -1,3 +1,4 @@
+import { MAX_FUTURE_SKEW_MS } from '../../../src/core/config';
 import { WATCH } from '../config';
 import type { Reading } from '../types';
 
@@ -6,7 +7,7 @@ const coord = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-export function parseThaiWater(json: unknown): Reading[] {
+export function parseThaiWater(json: unknown, now: Date = new Date()): Reading[] {
   const data = (json as { waterlevel_data?: { data?: unknown[] } } | null)?.waterlevel_data?.data;
   if (!Array.isArray(data)) return [];
   const out: Reading[] = [];
@@ -18,6 +19,7 @@ export function parseThaiWater(json: unknown): Reading[] {
     if (r.station.id == null) continue;
     const observedAt = new Date(`${r.waterlevel_datetime.replace(' ', 'T')}:00+07:00`);
     if (Number.isNaN(observedAt.getTime())) continue;
+    if (observedAt.getTime() - now.getTime() > MAX_FUTURE_SKEW_MS) continue; // future stamp: invalid, never "fresh"
     out.push({
       source: 'thaiwater', stationId: String(r.station.id), stationName: name,
       lat: coord(r.station.tele_station_lat), lng: coord(r.station.tele_station_long),

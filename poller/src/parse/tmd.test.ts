@@ -31,3 +31,9 @@ it('parses a feed with exactly one fresh item', () => {
   expect(out).toHaveLength(1);
   expect(out[0]).toMatchObject({ id: 'ONE', mentionsBangkok: false });
 });
+
+it('skips warnings issued more than 10 minutes in the future', () => {
+  const one = `<rss><channel><item><title>t</title><link>l</link><guid>F</guid><pubDate>Sat, 03 Oct 2026 22:50:00 +0700</pubDate></item></channel></rss>`;
+  expect(parseTmdCap(one, new Date('2026-10-03T15:40:00Z'))).toHaveLength(1);
+  expect(parseTmdCap(one, new Date('2026-10-03T15:39:00Z'))).toEqual([]);
+});
