@@ -60,3 +60,23 @@ describe('BMA -99 sentinel', () => {
     expect(out.map((r) => r.metric)).toEqual(['wl_in']);
   });
 });
+
+describe('BMA no-data guards', () => {
+  const st = (last: Record<string, unknown>, lat: unknown = 1) => ({ waterStation: [{ water_station_info: { water_code: 'WL.STN.02', water_shortname: 'x', latitude: lat, longitude: 1,
+    water_level_last: { wl_in: null, wl_out01: null, site_timestamp: '/Date(1791108300000)/', ...last } } }] });
+  it('skips wl_in = -99', () => expect(parseBmaCanal(st({ wl_in: -99 }))).toEqual([]));
+  it('accepts a real negative level (-3)', () => expect(parseBmaCanal(st({ wl_in: -3 })).map((r) => r.value)).toEqual([-3]));
+  it('nulls a -99 latitude without dropping the row', () => {
+    const out = parseBmaCanal(st({ wl_in: 0.5 }, -99));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.lat).toBeNull();
+  });
+  it('skips negative rainfall', () => {
+    const out = parseBmaRain([{ rain_code: 'RF.MBR.03', rain_shortname: 'x', latitude: 1, longitude: 1, site_timestamp: '/Date(1791099300000)/', rf1hr: -99, rf24hr: -1 }]);
+    expect(out).toEqual([]);
+  });
+  it('keeps zero rainfall', () => {
+    const out = parseBmaRain([{ rain_code: 'RF.MBR.03', rain_shortname: 'x', latitude: 1, longitude: 1, site_timestamp: '/Date(1791099300000)/', rf1hr: 0, rf24hr: -1 }]);
+    expect(out.map((r) => r.metric)).toEqual(['rf1hr']);
+  });
+});

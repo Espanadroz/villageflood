@@ -35,6 +35,11 @@ export function parseBmaCanal(json: unknown): Reading[] {
   return out;
 }
 
+const nonNeg = (v: unknown): number | null => {
+  const n = num(v);
+  return n !== null && n >= 0 ? n : null; // rainfall can't be negative: any negative is a sentinel
+};
+
 export function parseBmaRain(json: unknown): Reading[] {
   if (!Array.isArray(json)) return [];
   const out: Reading[] = [];
@@ -44,7 +49,7 @@ export function parseBmaRain(json: unknown): Reading[] {
     const observedAt = parseDotNetDate(s.site_timestamp);
     if (!observedAt) continue;
     for (const metric of ['rf1hr', 'rf24hr'] as const) {
-      const value = num(s[metric]);
+      const value = nonNeg(s[metric]);
       if (value === null) continue;
       out.push({
         source: 'bma_rain', stationId: code, stationName: String(s.rain_shortname ?? code),

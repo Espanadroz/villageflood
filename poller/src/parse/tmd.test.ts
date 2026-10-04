@@ -24,3 +24,10 @@ it('skips items with a missing or invalid pubDate', () => {
   const x = `<rss><channel><item><title>a</title><link>l</link><guid>g1</guid></item><item><title>b</title><link>l</link><guid>g2</guid><pubDate>not a date</pubDate></item></channel></rss>`;
   expect(parseTmdCap(x, NOW)).toEqual([]);
 });
+
+it('parses a feed with exactly one fresh item', () => {
+  const one = `<rss><channel><item><title>t</title><link>https://x/1.xml</link><description>d</description><guid>ONE</guid><pubDate>Sat, 03 Oct 2026 22:50:00 +0700</pubDate></item></channel></rss>`;
+  const out = parseTmdCap(one, NOW);
+  expect(out).toHaveLength(1);
+  expect(out[0]).toMatchObject({ id: 'ONE', mentionsBangkok: false });
+});

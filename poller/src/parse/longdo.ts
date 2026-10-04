@@ -20,6 +20,7 @@ export function parseLongdo(json: unknown, now: Date): Incident[] {
     const startAt = thai(e.start);
     const stopAt = thai(e.stop);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !startAt || !stopAt) continue;
+    if (startAt.getTime() > stopAt.getTime()) continue;
     if (stopAt.getTime() <= now.getTime()) continue;
     if (haversineM(VILLAGE_CENTER, { lat, lng }) > LONGDO_RADIUS_M) continue;
     const sev = Number(e.severity ?? 0);

@@ -25,3 +25,8 @@ it('skips rows with bad coordinates or timestamps and never emits NaN severity',
   expect(out.map((i) => i.id)).toEqual(['7']);
   expect(out[0]!.severity).toBe(0);
 });
+
+it('skips incidents that start after they stop', () => {
+  const rows = [{ eid: '8', title: 'x', latitude: '13.7218', longitude: '100.7764', type: '6', start: '2026-10-04 19:00:00', stop: '2026-10-04 18:30:00', severity: 1 }];
+  expect(parseLongdo(rows, NOW)).toEqual([]);
+});
