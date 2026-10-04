@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { SnapshotProvider, useData } from '../state/SnapshotContext';
+import { OutboxProvider } from '../state/OutboxContext';
 import { Layout } from './Layout';
 import { ReportPage } from './pages/ReportPage';
 
@@ -22,6 +23,7 @@ function Gate({ children }: { children: React.ReactNode }) {
 export function App() {
   return (
     <SnapshotProvider>
+      <OutboxProvider>
       <BrowserRouter>
         <Gate>
           <Routes>
@@ -32,6 +34,7 @@ export function App() {
           </Routes>
         </Gate>
       </BrowserRouter>
+      </OutboxProvider>
     </SnapshotProvider>
   );
 }

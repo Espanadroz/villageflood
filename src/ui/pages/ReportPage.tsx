@@ -6,22 +6,34 @@ import type { ReportKind } from '../../core/types';
 import { validateDraft } from '../../core/validate';
 import { getDeviceId, getNickname, setNickname } from '../../data/device';
 import { describeSubmitError, type OutboxItem } from '../../data/submit';
-import { useGeolocation } from '../../lib/useGeolocation';
-import { outbox, useOutboxCount } from '../../state/outbox';
+import { getPositionNow, useGeolocation } from '../../lib/useGeolocation';
+import { newId } from '../../lib/uuid';
+import { outbox } from '../../state/outbox';
+import { useOutboxStatus } from '../../state/OutboxContext';
 import { useData } from '../../state/SnapshotContext';
 import { ConsentGate } from '../components/ConsentGate';
 import { EvidenceCapture, type Captured } from '../components/EvidenceCapture';
 
 const KINDS: [ReportKind, string][] = [['road', 'สภาพถนน'], ['water_level', 'ระดับน้ำ'], ['supply', 'จุดเสบียง'], ['general', 'ข้อความทั่วไป']];
 const ROAD_VALUES = ['dry', 'small_car', 'high_clearance', 'impassable'] as const;
+const SAVED_MSG = 'ยังส่งไม่สำเร็จ — เก็บรายงานไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเชื่อมต่อได้';
 const SUPPLY_VALUES = ['open', 'closed', 'out_of_stock', 'unreachable'] as const;
 
 export function ReportPage() {
+  return (
+    <div className="page">
+      <h1>ส่งรายงาน</h1>
+      <ConsentGate><ReportForm /></ConsentGate>
+    </div>
+  );
+}
+
+function ReportForm() {
   const { snapshot } = useData();
   const [params] = useSearchParams();
   const initialKind = (params.get('kind') as ReportKind) || 'road';
   const [kind, setKind] = useState<ReportKind>(KINDS.some(([k]) => k === initialKind) ? initialKind : 'road');
-  const [targetId, setTargetId] = useState(params.get('target') ?? '');
+  const [rawTarget, setTargetId] = useState(params.get('target') ?? '');
   const [value, setValue] = useState('');
   const [note, setNote] = useState('');
   const [nickname, setNick] = useState(getNickname());
@@ -30,12 +42,13 @@ export function ReportPage() {
   const [done, setDone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { pos, error: geoError, refresh } = useGeolocation();
-  const pendingCount = useOutboxCount();
+  const { pendingCount, refresh: refreshOutbox } = useOutboxStatus();
   const s = snapshot!;
 
   const targets: { id: string; name: string }[] =
     kind === 'road' ? s.segments : kind === 'water_level' ? s.marks : kind === 'supply' ? s.places
     : [{ id: 'village', name: 'ทั่วไป' }];
+  const targetId = targets.some((t) => t.id === rawTarget) ? rawTarget : '';
   const generalTarget = kind === 'general' ? 'village' : targetId;
   const values: { v: string; label: string }[] =
     kind === 'road' ? ROAD_VALUES.map((v) => ({ v, label: STATUS_LABEL_TH[v] }))
@@ -50,26 +63,35 @@ export function ReportPage() {
     setErrors(errs);
     if (errs.length) return;
     setBusy(true);
-    setNickname(nickname);
-    const item: OutboxItem = {
-      id: crypto.randomUUID(), createdAt: Date.now(), attempts: 0, blob: evidence?.blob ?? null, mediaType: evidence?.mediaType ?? null,
-      draft: { deviceId: getDeviceId(), nickname: nickname.trim(), kind, targetId: generalTarget, value: effectiveValue, lat: pos?.lat ?? null, lng: pos?.lng ?? null, note: kind === 'general' ? note.trim() : null },
-    };
-    await outbox.add(item);
-    const r = await outbox.flush();
-    setBusy(false);
-    if (r.failed) { const f = (await outbox.failed()).at(-1); setErrors([describeSubmitError(f?.reason ?? '')]); }
-    else if (r.stoppedOnRetry) setDone('ยังส่งไม่สำเร็จ — เก็บรายงานไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเชื่อมต่อได้');
-    else setDone('ส่งรายงานแล้ว ขอบคุณครับ/ค่ะ');
+    try {
+      setNickname(nickname);
+      const where = (await getPositionNow()) ?? pos;
+      const item: OutboxItem = {
+        id: newId(), createdAt: Date.now(), attempts: 0, blob: evidence?.blob ?? null, mediaType: evidence?.mediaType ?? null,
+        draft: { deviceId: getDeviceId(), nickname: nickname.trim(), kind, targetId: generalTarget, value: effectiveValue, lat: where?.lat ?? null, lng: where?.lng ?? null, note: kind === 'general' ? note.trim() : null },
+      };
+      try { await outbox.add(item); }
+      catch { setErrors(['บันทึกไม่สำเร็จ — รายงานยังไม่ถูกเก็บ กรุณาลองอีกครั้ง']); return; }
+      try { await outbox.flush(); }
+      catch { setDone(SAVED_MSG); return; }
+      const [pending, failed] = await Promise.all([outbox.pending(), outbox.failed()]);
+      const bad = failed.find((f) => f.item.id === item.id);
+      if (pending.some((p) => p.id === item.id)) setDone(SAVED_MSG);
+      else if (bad) setErrors([describeSubmitError(bad.reason), 'รายงานนี้ยังไม่ได้ถูกส่ง']);
+      else setDone('ส่งรายงานแล้ว ขอบคุณครับ/ค่ะ');
+    } catch {
+      setErrors(['เกิดข้อผิดพลาด กรุณาตรวจสอบว่ารายงานถูกเก็บไว้แล้วหรือไม่ ก่อนลองอีกครั้ง']);
+    } finally {
+      setBusy(false);
+      void refreshOutbox();
+    }
   }
 
-  if (done) return <div className="page"><div className="card"><p>{done}</p><button onClick={() => { setDone(null); setValue(''); setEvidence(null); setNote(''); }}>รายงานเพิ่ม</button></div></div>;
+  if (done) return <div className="card"><p>{done}</p><button onClick={() => { setDone(null); setValue(''); setEvidence(null); setNote(''); }}>รายงานเพิ่ม</button></div>;
 
   return (
-    <div className="page">
-      <h1>ส่งรายงาน</h1>
+    <>
       {pendingCount > 0 && <div className="banner banner--warn">มี {pendingCount} รายงานรอส่ง จะส่งให้อัตโนมัติเมื่อมีอินเทอร์เน็ต</div>}
-      <ConsentGate>
         <div className="card">
           <strong>ประเภท</strong>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
@@ -96,7 +118,7 @@ export function ReportPage() {
                 <input type="radio" name="value" checked={value === o.v} onChange={() => setValue(o.v)} /> {o.label}
               </label>))}
         </fieldset>
-        {kind !== 'general' && <EvidenceCapture required={evidenceRequired} onChange={setEvidence} />}
+        {kind !== 'general' && <EvidenceCapture key={kind} required={evidenceRequired} onChange={setEvidence} />}
         <div className="card">
           <label>ชื่อเล่น <input value={nickname} onChange={(e) => setNick(e.target.value)} maxLength={40} style={{ width: '100%', minHeight: 44 }} /></label>
           <p className="age">
@@ -107,7 +129,6 @@ export function ReportPage() {
         </div>
         {errors.length > 0 && <ul role="alert" className="conflict">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
         <button type="button" disabled={busy} onClick={submit}>ส่งรายงาน</button>
-      </ConsentGate>
-    </div>
+    </>
   );
 }

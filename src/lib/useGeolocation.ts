@@ -1,5 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 
+export type Pos = { lat: number; lng: number; accuracy: number };
+
+export function getPositionNow(timeoutMs = 8000): Promise<Pos | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v: Pos | null) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    try {
+      if (typeof navigator === 'undefined' || !('geolocation' in navigator) || !navigator.geolocation) return finish(null);
+      navigator.geolocation.getCurrentPosition(
+        (p) => finish({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+        () => finish(null),
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
+      );
+    } catch { finish(null); }
+  });
+}
+
 export function useGeolocation() {
   const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [error, setError] = useState<string | null>(null);

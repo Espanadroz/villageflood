@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS } from '../../core/config';
 import { compressImage, isFreshCapture, readVideoDuration } from '../../lib/media';
 import { InPageCamera } from './InPageCamera';
@@ -13,12 +13,18 @@ export function EvidenceCapture({ required, onChange }: { required: boolean; onC
   const [error, setError] = useState<string | null>(null);
   const [camera, setCamera] = useState(false);
 
+  const urlRef = useRef<string | null>(null);
+  const revoke = () => { if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null; } };
+  useEffect(() => revoke, []);
+
   const accept = (c: Captured) => {
     setError(null);
-    setPreview({ url: URL.createObjectURL(c.blob), kind: c.mediaType.startsWith('video') ? 'video' : 'image' });
+    revoke();
+    urlRef.current = URL.createObjectURL(c.blob);
+    setPreview({ url: urlRef.current, kind: c.mediaType.startsWith('video') ? 'video' : 'image' });
     onChange(c);
   };
-  const reject = (m: string) => { setError(m); setPreview(null); onChange(null); };
+  const reject = (m: string) => { revoke(); setError(m); setPreview(null); onChange(null); };
 
   async function onFile(file: File | undefined, kind: 'image' | 'video') {
     if (!file) return;
