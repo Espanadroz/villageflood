@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { buildGoogleMapsUrl } from '../../core/routes';
 import { VEHICLE_LABEL_TH } from '../../core/labels';
 import type { VehicleClass } from '../../core/types';
 import { derive } from '../../state/derive';
@@ -8,6 +7,7 @@ import { useData } from '../../state/SnapshotContext';
 import { AgeLabel } from '../components/AgeLabel';
 import { Legend } from '../components/Legend';
 import { MapView } from '../map/MapView';
+import { formatTtlTh, googleMapsLinkFor } from './routesHelpers';
 
 const VEHICLE_KEY = 'flood.vehicle';
 const loadVehicle = (): VehicleClass => { try { return localStorage.getItem(VEHICLE_KEY) === 'high_clearance' ? 'high_clearance' : 'small_car'; } catch { return 'small_car'; } };
@@ -15,9 +15,6 @@ const loadVehicle = (): VehicleClass => { try { return localStorage.getItem(VEHI
 const STATE_TEXT = { ok: 'ไปได้ (ตามรายงานล่าสุด)', unknown: 'ไม่ทราบ — ยังไม่มีข้อมูลบางช่วง', blocked: 'ไปไม่ได้' } as const;
 const STATE_COLOR = { ok: '#1a9850', unknown: '#8a8f98', blocked: '#d73027' } as const;
 const EMPTY: never[] = [];
-
-const finiteLL = (p: { lat: number; lng: number } | undefined): p is { lat: number; lng: number } =>
-  !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
 
 export function RoutesPage() {
   const { snapshot: s, now } = useData();
@@ -35,15 +32,10 @@ export function RoutesPage() {
   const highlightIds = useMemo(() => openView?.route.segmentIds ?? EMPTY, [openView]);
   const chooseVehicle = (v: VehicleClass) => { setVehicle(v); try { localStorage.setItem(VEHICLE_KEY, v); } catch { /* ignore */ } };
 
-  const mapsUrl = (v: RouteView): string | null => {
-    const dd = v.destination;
-    if (!dd || !finiteLL({ lat: dd.lat, lng: dd.lng }) || !finiteLL(snap.settings.origin)) return null;
-    const wps = v.route.waypoints.filter(finiteLL);
-    return buildGoogleMapsUrl({ origin: snap.settings.origin, destination: { lat: dd.lat, lng: dd.lng }, waypoints: wps });
-  };
-
   const card = (v: RouteView) => {
-    const url = open === v.route.id ? mapsUrl(v) : null;
+    const isOpen = open === v.route.id;
+    const url = isOpen ? googleMapsLinkFor(v, snap.settings.origin) : null;
+    const coordsBad = isOpen && v.status.state === 'ok' && !url;
     return (
       <article key={v.route.id} className="card" style={{ borderLeft: `6px solid ${STATE_COLOR[v.status.state]}` }}>
         <header style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -53,9 +45,11 @@ export function RoutesPage() {
         <p style={{ margin: '4px 0', fontWeight: 700 }}>{v.destination?.name} · {STATE_TEXT[v.status.state]} สำหรับ{VEHICLE_LABEL_TH[vehicle]}{v.status.hasConflict && ' · มีรายงานขัดแย้ง'}</p>
         {v.blockedNames.length > 0 && <p className="conflict">ติดที่: {v.blockedNames.join(', ')}</p>}
         {v.unknownNames.length > 0 && <p className="age">ไม่มีข้อมูล: {v.unknownNames.join(', ')} (ห้ามถือว่าผ่านได้)</p>}
-        <p className="age">ช่วงที่เก่าที่สุดในเส้นนี้: <AgeLabel at={v.status.oldestAsOf} now={now} /></p>
-        <button type="button" className="secondary" onClick={() => setOpen(open === v.route.id ? null : v.route.id)}>{open === v.route.id ? 'ซ่อนแผนที่' : 'ดูบนแผนที่'}</button>
-        {open === v.route.id && (
+        {v.status.state === 'ok'
+          ? <p className="age">ไปได้ตามรายงานที่ไม่เก่าเกิน {formatTtlTh(snap.settings.ttlMs.road)} (เก่าที่สุดในเส้นนี้: <AgeLabel at={v.status.oldestAsOf} now={now} />)</p>
+          : <p className="age">ช่วงที่เก่าที่สุดในเส้นนี้: <AgeLabel at={v.status.oldestAsOf} now={now} /></p>}
+        <button type="button" className="secondary" aria-expanded={isOpen} onClick={() => setOpen(open === v.route.id ? null : v.route.id)}>{isOpen ? 'ซ่อนแผนที่' : 'ดูบนแผนที่'}</button>
+        {isOpen && (
           <div style={{ marginTop: 8 }}>
             <MapView segments={snap.segments} states={d.segmentStates} highlightIds={highlightIds} center={snap.settings.origin} zoom={13} height="45dvh"
               onError={onMapError} onHealthy={onMapHealthy} />
@@ -67,6 +61,8 @@ export function RoutesPage() {
                 <a className="btn" href={url} target="_blank" rel="noreferrer noopener">เปิดนำทางใน Google Maps</a>
               </>
             )}
+            {coordsBad && <p className="conflict">ข้อมูลจุดนำทางของเส้นทางนี้ไม่ถูกต้อง — แจ้งกรรมการ</p>}
+            {v.status.state !== 'ok' && <p className="age">ไม่แนะนำให้นำทางเส้นทางนี้ — {v.status.state === 'blocked' ? 'มีช่วงที่ผ่านไม่ได้' : 'ยังไม่มีข้อมูลบางช่วง'}</p>}
           </div>
         )}
       </article>
@@ -86,7 +82,7 @@ export function RoutesPage() {
         {snap.destinations.map((x) => <button key={x.id} type="button" aria-pressed={dest === x.id} className={dest === x.id ? '' : 'secondary'} onClick={() => setDest(x.id)}>{x.name}</button>)}
       </div>
       {!best && views.length > 0 && <div className="banner banner--warn">ขณะนี้ยังไม่มีเส้นทางที่ยืนยันได้ว่าไปได้สำหรับ{VEHICLE_LABEL_TH[vehicle]} — โปรดรายงานสภาพถนนช่วยกัน</div>}
-      {views.length === 0 && <p>ยังไม่มีเส้นทางในระบบ</p>}
+      {views.length === 0 && <p>{snap.routes.length === 0 ? 'ยังไม่มีเส้นทางในระบบ' : 'ยังไม่มีเส้นทางไปยังปลายทางนี้'}</p>}
       {views.map(card)}
     </div>
   );
