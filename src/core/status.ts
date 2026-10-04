@@ -1,4 +1,5 @@
 import { requiresEvidence } from './evidence';
+import { MINUTE } from './config';
 import type { Report, Resolved, RoadStatus, SupplyStatus } from './types';
 
 export const ROAD_SEVERITY: Record<RoadStatus, number> = { dry: 0, small_car: 1, high_clearance: 2, impassable: 3 };
@@ -13,6 +14,11 @@ function unknown<V extends string>(): Resolved<V> {
 
 /** A report counts toward status only if unexpired, evidenced when required, and location-matched (or committee-vouched). */
 export function isEffective(r: Report, now: number, ttlMs: number): boolean {
+  // Fail closed: reject if timestamps or TTL are not finite
+  if (!Number.isFinite(r.createdAt) || !Number.isFinite(ttlMs) || !Number.isFinite(now)) return false;
+  // Reject if report is too far in the future (> 5 minutes ahead)
+  if (r.createdAt > now + 5 * MINUTE) return false;
+  // Reject if report has expired
   if (now - r.createdAt >= ttlMs) return false;
   if (requiresEvidence(r.kind, r.value) && !r.hasEvidence) return false;
   if (!r.locationOk && !r.byCommittee && !r.confirmedByCommittee) return false;
@@ -41,13 +47,13 @@ function resolveWorst<V extends string>(
 }
 
 export const resolveRoad = (reports: Report[], now: number, ttlMs: number): Resolved<RoadStatus> =>
-  resolveWorst<RoadStatus>(reports, now, ttlMs, sev(ROAD_SEVERITY));
+  resolveWorst<RoadStatus>(reports.filter((r) => r.kind === 'road'), now, ttlMs, sev(ROAD_SEVERITY));
 
 export const resolveWaterLevel = (reports: Report[], now: number, ttlMs: number): Resolved<string> =>
-  resolveWorst<string>(reports, now, ttlMs, levelSeverity);
+  resolveWorst<string>(reports.filter((r) => r.kind === 'water_level'), now, ttlMs, levelSeverity);
 
 export function resolveSupply(reports: Report[], now: number, ttlMs: number): Resolved<SupplyStatus> {
-  const valid = reports.filter((r) => SUPPLY_VALUES.includes(r.value) && isEffective(r, now, ttlMs));
+  const valid = reports.filter((r) => r.kind === 'supply' && SUPPLY_VALUES.includes(r.value) && isEffective(r, now, ttlMs));
   if (valid.length === 0) return unknown<SupplyStatus>();
   const newest = valid.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
   return { value: newest.value as SupplyStatus, asOf: newest.createdAt, conflict: false, basisReportId: newest.id };

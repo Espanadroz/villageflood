@@ -1,5 +1,5 @@
 import { resolveRoad, resolveWaterLevel, resolveSupply, resolveRoadSegments, isEffective } from './status';
-import { HOUR } from './config';
+import { HOUR, MINUTE } from './config';
 import type { Report } from './types';
 
 const NOW = 1_000_000_000_000;
@@ -53,12 +53,56 @@ describe('resolveRoad', () => {
     ], NOW, TTL);
     expect(res).toMatchObject({ value: 'impassable', conflict: true });
   });
+
+  // Defect 3: Kind filtering — resolveRoad must only accept road reports
+  it('ignores a general-kind report with a road value', () => {
+    expect(resolveRoad([rep({ kind: 'general', value: 'dry' })], NOW, TTL).value).toBe('unknown');
+  });
+  it('ignores a water_level-kind report', () => {
+    expect(resolveRoad([rep({ kind: 'water_level', value: 'dry' })], NOW, TTL).value).toBe('unknown');
+  });
+  it('ignores a supply-kind report', () => {
+    expect(resolveRoad([rep({ kind: 'supply', value: 'dry' })], NOW, TTL).value).toBe('unknown');
+  });
 });
 
 describe('isEffective', () => {
   it('committee reports need no location match but still need evidence for passable claims', () => {
     expect(isEffective(rep({ byCommittee: true, locationOk: false }), NOW, TTL)).toBe(true);
     expect(isEffective(rep({ byCommittee: true, hasEvidence: false }), NOW, TTL)).toBe(false);
+  });
+
+  // Defect 1: Expiry fails open — NaN handling
+  it('returns false (fails closed) if createdAt is NaN', () => {
+    expect(isEffective(rep({ createdAt: NaN }), NOW, TTL)).toBe(false);
+  });
+  it('returns false (fails closed) if ttlMs is NaN', () => {
+    expect(isEffective(rep(), NOW, NaN)).toBe(false);
+  });
+  it('returns false (fails closed) if ttlMs is undefined', () => {
+    expect(isEffective(rep(), NOW, undefined as any)).toBe(false);
+  });
+
+  // Defect 2: Future-dated reports — must reject too-far-future timestamps
+  it('rejects a report created more than 5 minutes in the future', () => {
+    expect(isEffective(rep({ createdAt: NOW + 10 * MINUTE }), NOW, TTL)).toBe(false);
+  });
+  it('accepts a report created within 5-minute skew (1 minute in future)', () => {
+    expect(isEffective(rep({ createdAt: NOW + 1 * MINUTE }), NOW, TTL)).toBe(true);
+  });
+  it('accepts a report created exactly at the future boundary (NOW + 5 min)', () => {
+    expect(isEffective(rep({ createdAt: NOW + 5 * MINUTE }), NOW, TTL)).toBe(true);
+  });
+  it('rejects a report created just past the future boundary (NOW + 5 min + 1)', () => {
+    expect(isEffective(rep({ createdAt: NOW + 5 * MINUTE + 1 }), NOW, TTL)).toBe(false);
+  });
+
+  // TTL boundary tests
+  it('rejects a report exactly TTL old', () => {
+    expect(isEffective(rep({ createdAt: NOW - TTL }), NOW, TTL)).toBe(false);
+  });
+  it('accepts a report TTL-1ms old', () => {
+    expect(isEffective(rep({ createdAt: NOW - TTL + 1 }), NOW, TTL)).toBe(true);
   });
 });
 
@@ -71,6 +115,17 @@ describe('resolveWaterLevel', () => {
   it('expires after its own ttl', () => {
     const r = rep({ kind: 'water_level', targetId: 'mark1', value: '2', createdAt: NOW - 2 * HOUR - 1 });
     expect(resolveWaterLevel([r], NOW, 2 * HOUR).value).toBe('unknown');
+  });
+
+  // Defect 3: Kind filtering — resolveWaterLevel must only accept water_level reports
+  it('ignores a road-kind report with numeric value', () => {
+    expect(resolveWaterLevel([rep({ kind: 'road', targetId: 'mark1', value: '2' })], NOW, 2 * HOUR).value).toBe('unknown');
+  });
+  it('ignores a general-kind report with numeric value', () => {
+    expect(resolveWaterLevel([rep({ kind: 'general', targetId: 'mark1', value: '2' })], NOW, 2 * HOUR).value).toBe('unknown');
+  });
+  it('ignores a supply-kind report', () => {
+    expect(resolveWaterLevel([rep({ kind: 'supply', targetId: 'mark1', value: '2' })], NOW, 2 * HOUR).value).toBe('unknown');
   });
 });
 
@@ -86,6 +141,17 @@ describe('resolveSupply', () => {
   it('is unknown after 12 hours', () => {
     const r = rep({ kind: 'supply', targetId: 'p1', value: 'open', createdAt: NOW - 12 * HOUR - 1 });
     expect(resolveSupply([r], NOW, 12 * HOUR).value).toBe('unknown');
+  });
+
+  // Defect 3: Kind filtering — resolveSupply must only accept supply reports
+  it('ignores a road-kind report with supply value', () => {
+    expect(resolveSupply([rep({ kind: 'road', targetId: 'p1', value: 'open' })], NOW, 12 * HOUR).value).toBe('unknown');
+  });
+  it('ignores a general-kind report with supply value', () => {
+    expect(resolveSupply([rep({ kind: 'general', targetId: 'p1', value: 'open' })], NOW, 12 * HOUR).value).toBe('unknown');
+  });
+  it('ignores a water_level-kind report', () => {
+    expect(resolveSupply([rep({ kind: 'water_level', targetId: 'p1', value: 'open' })], NOW, 12 * HOUR).value).toBe('unknown');
   });
 });
 
