@@ -14,3 +14,9 @@ it('says there is no data instead of a time when missing', () => {
   render(<AgeLabel at={null} now={NOW} />);
   expect(screen.getByText('ไม่มีข้อมูล')).toBeInTheDocument();
 });
+it('treats non-finite times as no data', () => {
+  const { rerender } = render(<AgeLabel at={NaN} now={NOW} />);
+  expect(screen.getByText('ไม่มีข้อมูล')).toBeInTheDocument();
+  rerender(<AgeLabel at={undefined as unknown as number} now={NOW} />);
+  expect(screen.getByText('ไม่มีข้อมูล')).toBeInTheDocument();
+});

@@ -1,5 +1,7 @@
 import type { RouteDef } from '../core/routes';
 import { mapReading, mapReportRow, parseSettings, type ReportRow } from './mappers';
+import { computeServerOffset } from './clock';
+import { settledOrEmpty } from './settled';
 import { mediaUrl, supabase } from './supabase';
 import type { DestinationRow, IncidentRow, MarkRow, PlaceRow, SegmentRow, Snapshot, WarningRow } from './types';
 
@@ -19,13 +21,15 @@ export async function fetchSnapshot(): Promise<Snapshot> {
       q<any[]>(supabase.from('routes').select('id,name,destination_id,segment_ids,waypoints,distance_m')),
       q<{ key: string; value: unknown }[]>(supabase.from('settings').select('key,value')),
       q<ReportRow[]>(supabase.from('reports_public').select('*').order('created_at', { ascending: false }).limit(500)),
-      q<any[]>(supabase.from('agency_latest').select('*')),
-      q<any[]>(supabase.from('agency_recent').select('*')),
-      q<any[]>(supabase.from('agency_warnings').select('*').order('issued_at', { ascending: false }).limit(20)),
-      q<any[]>(supabase.from('incidents').select('*').gt('stop_at', new Date().toISOString())),
+      settledOrEmpty(q<any[]>(supabase.from('agency_latest').select('*'))),
+      settledOrEmpty(q<any[]>(supabase.from('agency_recent').select('*'))),
+      settledOrEmpty(q<any[]>(supabase.from('agency_warnings').select('*').order('issued_at', { ascending: false }).limit(20))),
+      settledOrEmpty(q<any[]>(supabase.from('incidents').select('*').order('stop_at', { ascending: false }).limit(100))),
       q<string>(supabase.rpc('server_time')),
     ]);
 
+  const clientNow = Date.now();
+  const serverOffsetMs = computeServerOffset(serverTime, clientNow);
   const mapped = reports.map((r) => mapReportRow(r, mediaUrl));
   return {
     segments, marks, places, destinations,
@@ -35,7 +39,7 @@ export async function fetchSnapshot(): Promise<Snapshot> {
     latest: latest.map(mapReading), recent: recent.map(mapReading),
     warnings: warnings.map((w): WarningRow => ({ id: w.id, title: w.title, body: w.body, url: w.url, issuedAt: Date.parse(w.issued_at), mentionsBangkok: w.mentions_bangkok })),
     incidents: incidents.map((i): IncidentRow => ({ id: i.id, title: i.title, lat: i.lat, lng: i.lng, severity: i.severity ?? 0, startAt: Date.parse(i.start_at), stopAt: Date.parse(i.stop_at) })),
-    serverOffsetMs: Date.parse(serverTime) - Date.now(),
+    serverOffsetMs,
     fetchedAt: Date.now(),
   };
 }

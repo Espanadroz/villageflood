@@ -1,10 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useRef, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { fetchSnapshot } from '../data/queries';
 import type { Snapshot } from '../data/types';
+import { readCache, writeCache } from '../data/cache';
+import { effectiveNow } from '../data/clock';
 
-const CACHE_KEY = 'flood.snapshot.v1';
-const readCache = (): Snapshot | null => { try { const s = localStorage.getItem(CACHE_KEY); return s ? (JSON.parse(s) as Snapshot) : null; } catch { return null; } };
-const writeCache = (s: Snapshot) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify(s)); } catch { /* quota or blocked: ignore */ } };
 
 interface Ctx { snapshot: Snapshot | null; error: Error | null; loading: boolean; reload(): void; now: number }
 const DataContext = createContext<Ctx | null>(null);
@@ -13,10 +12,11 @@ export function SnapshotProvider({ children, refreshMs = 60_000 }: { children: R
   const [snapshot, setSnapshot] = useState<Snapshot | null>(readCache);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
+  const verified = useRef(false);
   const [tick, setTick] = useState(Date.now());
 
   const load = useCallback(async () => {
-    try { const s = await fetchSnapshot(); setSnapshot(s); setError(null); writeCache(s); }
+    try { const s = await fetchSnapshot(); verified.current = true; setSnapshot(s); setError(null); writeCache(s); }
     catch (e) { setError(e as Error); }
     finally { setLoading(false); }
   }, []);
@@ -32,7 +32,7 @@ export function SnapshotProvider({ children, refreshMs = 60_000 }: { children: R
   }, [load, refreshMs]);
 
   // `now` is corrected by the server clock offset so a wrong phone clock cannot make old data look fresh.
-  const now = tick + (snapshot?.serverOffsetMs ?? 0);
+  const now = effectiveNow(tick, snapshot?.serverOffsetMs ?? 0, verified.current);
   const value = useMemo(() => ({ snapshot, error, loading, reload: load, now }), [snapshot, error, loading, load, now]);
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
