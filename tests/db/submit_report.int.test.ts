@@ -15,16 +15,19 @@ const submit = (device: string, o: Record<string, unknown>, client = anon) =>
     p_lat: NEAR.lat, p_lng: NEAR.lng, p_media_path: null, p_media_type: null, p_note: null, ...o,
   });
 
-// Upload a tiny JPEG-like blob as evidence (service role) and return its path.
+// Upload a tiny JPEG-like blob as evidence (service role) into an upload-key folder and return its path.
+// The storage folder is a per-device upload key, never the device id (the device id is the submit credential).
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
-async function evidence(dev: string, name = `${crypto.randomUUID()}.jpg`) {
-  const path = `${dev}/${name}`;
+const uploadKeys = new Map<string, string>();
+const keyFor = (dev: string) => { let k = uploadKeys.get(dev); if (!k) { k = crypto.randomUUID(); uploadKeys.set(dev, k); } return k; };
+async function evidence(folder: string, name = `${crypto.randomUUID()}.jpg`) {
+  const path = `${folder}/${name}`;
   const { error } = await service.storage.from('evidence').upload(path, new Blob([JPEG], { type: 'image/jpeg' }), { contentType: 'image/jpeg' });
   expect(error).toBeNull();
   return path;
 }
 const withMedia = async (dev: string, o: Record<string, unknown> = {}) =>
-  ({ p_media_path: await evidence(dev), p_media_type: 'image/jpeg', ...o });
+  ({ p_media_path: await evidence(keyFor(dev)), p_media_type: 'image/jpeg', p_upload_key: keyFor(dev), ...o });
 const okReport = async (dev = crypto.randomUUID()) => {
   const r = await submit(dev, {});
   expect(r.error).toBeNull();
@@ -32,6 +35,17 @@ const okReport = async (dev = crypto.randomUUID()) => {
 };
 const row = async (id: string) =>
   (await service.from('reports').select('*').eq('id', id).single()).data!;
+
+async function userClient(committee: boolean) {
+  const email = `c-${crypto.randomUUID()}@example.test`;
+  const password = `pw-${crypto.randomUUID()}`;
+  const { data, error } = await service.auth.admin.createUser({ email, password, email_confirm: true });
+  expect(error).toBeNull();
+  if (committee) expect((await service.from('committee_members').insert({ user_id: data.user!.id })).error).toBeNull();
+  const client = createClient(url, process.env.SUPABASE_ANON_KEY!, opts);
+  expect((await client.auth.signInWithPassword({ email, password })).error).toBeNull();
+  return client;
+}
 
 describe('submit_report', () => {
   it('rejects a passable road claim without evidence', async () => {
@@ -138,25 +152,26 @@ describe('submit_report', () => {
 describe('evidence verification', () => {
   it('rejects a path whose object was never uploaded', async () => {
     const dev = crypto.randomUUID();
-    const { error } = await submit(dev, { p_value: 'dry', p_media_path: `${dev}/ghost.jpg`, p_media_type: 'image/jpeg' });
+    const { error } = await submit(dev, { p_value: 'dry', p_media_path: `${keyFor(dev)}/ghost.jpg`, p_media_type: 'image/jpeg', p_upload_key: keyFor(dev) });
     expect(error?.message).toContain('invalid_media');
   });
   it("rejects another device's folder", async () => {
     const dev = crypto.randomUUID(); const other = crypto.randomUUID();
-    const p = await evidence(other);
-    const { error } = await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg' });
+    const p = await evidence(keyFor(other));
+    const { error } = await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg', p_upload_key: keyFor(dev) });
     expect(error?.message).toContain('invalid_media');
   });
   it('rejects a bad or missing media type', async () => {
     const dev = crypto.randomUUID();
-    const p = await evidence(dev);
-    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/gif' })).error?.message).toContain('invalid_media');
-    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: null })).error?.message).toContain('invalid_media');
+    const k = keyFor(dev);
+    const p = await evidence(k);
+    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/gif', p_upload_key: k })).error?.message).toContain('invalid_media');
+    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: null, p_upload_key: k })).error?.message).toContain('invalid_media');
   });
   it('rejects malformed paths', async () => {
-    const dev = crypto.randomUUID();
-    for (const p of [`${dev}/a/b.jpg`, `${dev}/`, `../${dev}/a.jpg`, `${dev}/${'x'.repeat(200)}.jpg`]) {
-      expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg' })).error?.message).toContain('invalid_media');
+    const dev = crypto.randomUUID(); const k = keyFor(dev);
+    for (const p of [`${k}/a/b.jpg`, `${k}/`, `../${k}/a.jpg`, `${k}/${'x'.repeat(200)}.jpg`]) {
+      expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg', p_upload_key: k })).error?.message).toContain('invalid_media');
     }
   });
   it('anon can upload only into a uuid folder of the evidence bucket', async () => {
@@ -234,14 +249,22 @@ describe('access control', () => {
     const { error } = await anon.from('reports').insert({ kind: 'road', target_id: 'seg-demo-1', value: 'dry', device_id: dev, nickname: 'x', location_ok: true });
     expect(error).not.toBeNull();
   });
-  it('reports_public hides device_id and exposes exactly the public columns', async () => {
+  it('reports_public hides device_id and GPS and exposes exactly the public columns', async () => {
     const { id } = await okReport();
     const { data, error } = await anon.from('reports_public').select('*').eq('id', id).single();
     expect(error).toBeNull();
     expect(Object.keys(data!).sort()).toEqual([
-      'by_committee', 'confirmations', 'confirmed_by_committee', 'created_at', 'id', 'kind', 'lat', 'lng',
+      'by_committee', 'confirmations', 'confirmed_by_committee', 'created_at', 'id', 'kind',
       'location_ok', 'media_path', 'media_type', 'nickname', 'note', 'target_id', 'value',
     ]);
+  });
+  it('anon cannot read lat/lng from reports_public or reports_status_public', async () => {
+    const { id } = await okReport();
+    for (const v of ['reports_public', 'reports_status_public']) {
+      const { data, error } = await anon.from(v).select('id, lat, lng').eq('id', id);
+      expect(error).not.toBeNull();
+      expect(data).toBeNull();
+    }
   });
   it('anon cannot PATCH or DELETE through reports_public', async () => {
     const { id } = await okReport();
@@ -297,16 +320,6 @@ describe('access control', () => {
 });
 
 describe('committee', () => {
-  async function userClient(committee: boolean) {
-    const email = `c-${crypto.randomUUID()}@example.test`;
-    const password = `pw-${crypto.randomUUID()}`;
-    const { data, error } = await service.auth.admin.createUser({ email, password, email_confirm: true });
-    expect(error).toBeNull();
-    if (committee) expect((await service.from('committee_members').insert({ user_id: data.user!.id })).error).toBeNull();
-    const client = createClient(url, process.env.SUPABASE_ANON_KEY!, opts);
-    expect((await client.auth.signInWithPassword({ email, password })).error).toBeNull();
-    return client;
-  }
 
   it('committee can confirm and delete reports', async () => {
     const c = await userClient(true);
@@ -410,9 +423,217 @@ describe('idempotent submit_report (client_id)', () => {
   it('has a single submit_report overload that anon can execute', async () => {
     const psql = (sql: string) =>
       execFileSync('docker', ['exec', 'supabase_db_village-flood-app', 'psql', '-U', 'postgres', '-At', '-c', sql]).toString().trim();
-    expect(psql("select proname || ':' || pronargs from pg_proc where proname='submit_report'")).toBe('submit_report:11');
-    expect(psql("select has_function_privilege('anon', 'submit_report(uuid,text,text,text,text,double precision,double precision,text,text,text,uuid)', 'execute')")).toBe('t');
-    expect(psql("select has_function_privilege('public', 'submit_report(uuid,text,text,text,text,double precision,double precision,text,text,text,uuid)', 'execute')")).toBe('f');
+    const sig = 'submit_report(uuid,text,text,text,text,double precision,double precision,text,text,text,uuid,uuid,integer)';
+    expect(psql("select proname || ':' || pronargs from pg_proc where proname='submit_report'")).toBe('submit_report:13');
+    expect(psql(`select has_function_privilege('anon', '${sig}', 'execute')`)).toBe('t');
+    expect(psql(`select has_function_privilege('authenticated', '${sig}', 'execute')`)).toBe('t');
+    expect(psql(`select has_function_privilege('public', '${sig}', 'execute')`)).toBe('f');
+    expect(psql("select prosecdef from pg_proc where proname='submit_report'")).toBe('t');
     expect((await submit(crypto.randomUUID(), { p_client_id: crypto.randomUUID() })).error).toBeNull();
+  });
+});
+
+// ---- 0005: observation age, upload keys, status view, committee storage delete ----
+const psql = (sql: string) =>
+  execFileSync('docker', ['exec', 'supabase_db_village-flood-app', 'psql', '-U', 'postgres', '-At', '-c', sql]).toString().trim();
+const ageOf = async (id: string) => {
+  const r = await row(id);
+  return { createdAgoS: (Date.now() - Date.parse(r.created_at)) / 1000, receivedAgoS: (Date.now() - Date.parse(r.received_at)) / 1000 };
+};
+
+describe('observation age (p_age_seconds)', () => {
+  it('age 0 => created_at ~ now', async () => {
+    const r = await submit(crypto.randomUUID(), { p_age_seconds: 0 });
+    expect(r.error).toBeNull();
+    expect(Math.abs((await ageOf(r.data as string)).createdAgoS)).toBeLessThan(30);
+  });
+  it('omitted age defaults to 0', async () => {
+    const r = await submit(crypto.randomUUID(), {});
+    expect(Math.abs((await ageOf(r.data as string)).createdAgoS)).toBeLessThan(30);
+  });
+  it('age 3600 => created_at ~ now - 1 h, received_at ~ now', async () => {
+    const r = await submit(crypto.randomUUID(), { p_age_seconds: 3600 });
+    expect(r.error).toBeNull();
+    const a = await ageOf(r.data as string);
+    expect(Math.abs(a.createdAgoS - 3600)).toBeLessThan(30);
+    expect(Math.abs(a.receivedAgoS)).toBeLessThan(30);
+  });
+  it('a delayed report shows its observation time in reports_public', async () => {
+    const r = await submit(crypto.randomUUID(), { p_age_seconds: 7000 });
+    const { data } = await anon.from('reports_public').select('created_at').eq('id', r.data as string).single();
+    expect(Math.abs((Date.now() - Date.parse(data!.created_at)) / 1000 - 7000)).toBeLessThan(30);
+  });
+  it('rejects a road report older than the road TTL (3 h default)', async () => {
+    const { error } = await submit(crypto.randomUUID(), { p_age_seconds: 3 * 3600 + 60 });
+    expect(error?.message).toContain('report_too_old');
+  });
+  it('rejects a water-level report older than 2 h, accepts one just under', async () => {
+    const dev = crypto.randomUUID();
+    const base = { p_kind: 'water_level', p_target: 'mark-demo-wall', p_value: '2' };
+    expect((await submit(dev, await withMedia(dev, { ...base, p_age_seconds: 2 * 3600 + 60 }))).error?.message).toContain('report_too_old');
+    expect((await submit(dev, await withMedia(dev, { ...base, p_age_seconds: 2 * 3600 - 120 }))).error).toBeNull();
+  });
+  it('rejects a supply report older than the 12 h TTL', async () => {
+    const base = { p_kind: 'supply', p_target: 'place-demo-1', p_value: 'open' };
+    expect((await submit(crypto.randomUUID(), { ...base, p_age_seconds: 13 * 3600 })).error?.message).toContain('report_too_old');
+    expect((await submit(crypto.randomUUID(), { ...base, p_age_seconds: 11 * 3600 })).error).toBeNull();
+  });
+  it('uses the committee TTL from settings (restored afterwards)', async () => {
+    const { data: before } = await service.from('settings').select('value').eq('key', 'ttl_ms').single();
+    try {
+      expect((await service.from('settings').update({ value: { road: 3600000, water_level: 7200000, supply: 43200000 } }).eq('key', 'ttl_ms')).error).toBeNull();
+      expect((await submit(crypto.randomUUID(), { p_age_seconds: 3700 })).error?.message).toContain('report_too_old');
+      expect((await submit(crypto.randomUUID(), { p_age_seconds: 3000 })).error).toBeNull();
+    } finally {
+      await service.from('settings').update({ value: before!.value }).eq('key', 'ttl_ms');
+    }
+  });
+  it('falls back to the default TTL when the setting is missing or invalid (restored afterwards)', async () => {
+    const { data: before } = await service.from('settings').select('value').eq('key', 'ttl_ms').single();
+    try {
+      await service.from('settings').update({ value: { road: 'x', water_level: -5 } }).eq('key', 'ttl_ms');
+      expect((await submit(crypto.randomUUID(), { p_age_seconds: 3 * 3600 + 60 })).error?.message).toContain('report_too_old');
+      expect((await submit(crypto.randomUUID(), { p_age_seconds: 2 * 3600 })).error).toBeNull();
+    } finally {
+      await service.from('settings').update({ value: before!.value }).eq('key', 'ttl_ms');
+    }
+  });
+  it('general notes have no age limit; huge ages are clamped to 24 h', async () => {
+    const g = { p_kind: 'general', p_target: 'village', p_value: 'note', p_note: 'ไฟดับ' };
+    const r = await submit(crypto.randomUUID(), { ...g, p_age_seconds: 10 * 86400 });
+    expect(r.error).toBeNull();
+    expect(Math.abs((await ageOf(r.data as string)).createdAgoS - 86400)).toBeLessThan(30);
+  });
+  it('negative age is clamped to 0 (never in the future)', async () => {
+    const r = await submit(crypto.randomUUID(), { p_age_seconds: -100000 });
+    expect(r.error).toBeNull();
+    const a = await ageOf(r.data as string);
+    expect(a.createdAgoS).toBeGreaterThan(-30);
+    expect(a.createdAgoS).toBeLessThan(30);
+  });
+  it('a replay returns the existing id even when the replay is now too old', async () => {
+    const dev = crypto.randomUUID(); const cid = crypto.randomUUID();
+    const a = await submit(dev, { p_client_id: cid, p_age_seconds: 60 });
+    const b = await submit(dev, { p_client_id: cid, p_age_seconds: 5 * 3600 });
+    expect(b.error).toBeNull();
+    expect(b.data).toBe(a.data);
+    expect(Math.abs((await ageOf(a.data as string)).createdAgoS - 60)).toBeLessThan(30);
+  });
+  it('rate limit counts by received_at, so backdated reports still count', async () => {
+    const dev = crypto.randomUUID();
+    for (let i = 0; i < 10; i++) expect((await submit(dev, { p_age_seconds: 3600 })).error).toBeNull();
+    expect((await submit(dev, { p_age_seconds: 3600 })).error?.message).toContain('rate_limited');
+  });
+  it('committee reports also use the observation age', async () => {
+    const c = await userClient(true);
+    const r = await submit(crypto.randomUUID(), { p_kind: 'general', p_target: 'wall', p_value: 'note', p_note: 'กำแพงปกติ', p_age_seconds: 1800 }, c);
+    expect(r.error).toBeNull();
+    expect((await row(r.data as string)).by_committee).toBe(true);
+    expect(Math.abs((await ageOf(r.data as string)).createdAgoS - 1800)).toBeLessThan(30);
+    const road = await submit(crypto.randomUUID(), { p_age_seconds: 4 * 3600 }, c);
+    expect(road.error?.message).toContain('report_too_old');
+  });
+});
+
+describe('upload keys (device id never in storage paths)', () => {
+  it('a path in the device-id folder is rejected even when it exists', async () => {
+    const dev = crypto.randomUUID();
+    const p = await evidence(dev);
+    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg', p_upload_key: keyFor(dev) })).error?.message).toContain('invalid_media');
+    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg', p_upload_key: dev })).error?.message).toContain('invalid_media');
+  });
+  it('media without an upload key is rejected', async () => {
+    const dev = crypto.randomUUID();
+    const p = await evidence(keyFor(dev));
+    expect((await submit(dev, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg' })).error?.message).toContain('invalid_media');
+  });
+  it('binds the upload key to the device on first use', async () => {
+    const dev = crypto.randomUUID();
+    expect((await service.from('devices').select('upload_key').eq('id', dev)).data).toHaveLength(0);
+    expect((await submit(dev, await withMedia(dev, { p_value: 'dry' }))).error).toBeNull();
+    const { data } = await service.from('devices').select('upload_key').eq('id', dev).single();
+    expect(data!.upload_key).toBe(keyFor(dev));
+    expect((await submit(dev, await withMedia(dev, { p_value: 'dry' }))).error).toBeNull();
+  });
+  it('a failed submit does not bind the key', async () => {
+    const dev = crypto.randomUUID();
+    await submit(dev, {});
+    const k = crypto.randomUUID();
+    const p = await evidence(k);
+    expect((await submit(dev, { p_value: 'flying', p_media_path: p, p_media_type: 'image/jpeg', p_upload_key: k })).error?.message).toContain('invalid_value');
+    expect((await service.from('devices').select('upload_key').eq('id', dev).single()).data!.upload_key).toBeNull();
+  });
+  it('a second upload key for the same device is rejected', async () => {
+    const dev = crypto.randomUUID();
+    expect((await submit(dev, await withMedia(dev, { p_value: 'dry' }))).error).toBeNull();
+    const k2 = crypto.randomUUID();
+    const p2 = await evidence(k2);
+    expect((await submit(dev, { p_value: 'dry', p_media_path: p2, p_media_type: 'image/jpeg', p_upload_key: k2 })).error?.message).toContain('invalid_media');
+  });
+  it("another device cannot claim an upload key that is already bound", async () => {
+    const a = crypto.randomUUID(); const b = crypto.randomUUID();
+    expect((await submit(a, await withMedia(a, { p_value: 'dry' }))).error).toBeNull();
+    const p = await evidence(keyFor(a));
+    expect((await submit(b, { p_value: 'dry', p_media_path: p, p_media_type: 'image/jpeg', p_upload_key: keyFor(a) })).error?.message).toContain('invalid_media');
+  });
+  it('an upload key without media is ignored (not bound)', async () => {
+    const dev = crypto.randomUUID();
+    expect((await submit(dev, { p_upload_key: crypto.randomUUID() })).error).toBeNull();
+    expect((await service.from('devices').select('upload_key').eq('id', dev).single()).data!.upload_key).toBeNull();
+  });
+  it('storage insert policy still allows only uuid-shaped first folders', async () => {
+    const blob = new Blob([JPEG], { type: 'image/jpeg' });
+    expect((await anon.storage.from('evidence').upload(`${crypto.randomUUID()}/k-${crypto.randomUUID()}.jpg`, blob, { contentType: 'image/jpeg' })).error).toBeNull();
+    expect((await anon.storage.from('evidence').upload(`evil/${crypto.randomUUID()}.jpg`, blob, { contentType: 'image/jpeg' })).error).not.toBeNull();
+  });
+});
+
+describe('reports_status_public', () => {
+  it('contains road/water/supply rows but not general notes, with the public columns', async () => {
+    const road = await okReport();
+    const note = await submit(crypto.randomUUID(), { p_kind: 'general', p_target: 'village', p_value: 'note', p_note: 'x' });
+    const { data, error } = await anon.from('reports_status_public').select('*').in('id', [road.id, note.data as string]);
+    expect(error).toBeNull();
+    expect(data!.map((r) => r.id)).toEqual([road.id]);
+    expect(Object.keys(data![0]!).sort()).toEqual([
+      'by_committee', 'confirmations', 'confirmed_by_committee', 'created_at', 'id', 'kind',
+      'location_ok', 'media_path', 'media_type', 'nickname', 'note', 'target_id', 'value',
+    ]);
+  });
+  it('hides deleted rows and rows older than 7 days; anon cannot write through it', async () => {
+    const a = await okReport(); const b = await okReport();
+    await service.from('reports').update({ deleted: true }).eq('id', a.id);
+    await service.from('reports').update({ created_at: new Date(Date.now() - 8 * 86400_000).toISOString() }).eq('id', b.id);
+    expect((await anon.from('reports_status_public').select('id').in('id', [a.id, b.id])).data).toHaveLength(0);
+    expect((await anon.from('reports_status_public').delete().eq('id', a.id)).error).not.toBeNull();
+  });
+  it('supports exact counts (used by the client to detect a truncated status fetch)', async () => {
+    const { error, count } = await anon.from('reports_status_public').select('id', { count: 'exact', head: true });
+    expect(error).toBeNull();
+    expect(typeof count).toBe('number');
+  });
+});
+
+describe('committee evidence deletion', () => {
+  const exists = async (path: string) => {
+    const slash = path.indexOf('/');
+    const { data } = await service.storage.from('evidence').list(path.slice(0, slash), { search: path.slice(slash + 1) });
+    return (data ?? []).some((o) => o.name === path.slice(slash + 1));
+  };
+  it('committee can remove an evidence object', async () => {
+    const c = await userClient(true);
+    const p = await evidence(crypto.randomUUID());
+    expect(await exists(p)).toBe(true);
+    const { data, error } = await c.storage.from('evidence').remove([p]);
+    expect(error).toBeNull();
+    expect(data).toHaveLength(1);
+    expect(await exists(p)).toBe(false);
+  });
+  it('anon and non-committee users cannot remove evidence', async () => {
+    const n = await userClient(false);
+    const p = await evidence(crypto.randomUUID());
+    await anon.storage.from('evidence').remove([p]);
+    await n.storage.from('evidence').remove([p]);
+    expect(await exists(p)).toBe(true);
   });
 });
