@@ -1,7 +1,7 @@
 import type { RouteDef } from '../core/routes';
 import { mapReading, mapReportRow, parseSettings, type ReportRow } from './mappers';
 import { computeServerOffset } from './clock';
-import { FEED_LIMIT, mergeReportRows, STATUS_LIMIT } from './reportRows';
+import { COMMITTEE_NOTES_LIMIT, FEED_LIMIT, mergeReportRows, STATUS_LIMIT } from './reportRows';
 import { settledOrEmpty } from './settled';
 import { mediaUrl, supabase } from './supabase';
 import type { DestinationRow, IncidentRow, MarkRow, PlaceRow, SegmentRow, Snapshot, WarningRow } from './types';
@@ -13,7 +13,7 @@ async function q<T>(p: PromiseLike<{ data: T | null; error: { message: string } 
 }
 
 export async function fetchSnapshot(): Promise<Snapshot> {
-  const [segments, marks, places, destinations, routes, settings, statusRes, general, latest, recent, warnings, incidents, serverTime] =
+  const [segments, marks, places, destinations, routes, settings, statusRes, general, committeeNotes, latest, recent, warnings, incidents, serverTime] =
     await Promise.all([
       q<SegmentRow[]>(supabase.from('segments').select('id,name,geojson').order('sort')),
       q<MarkRow[]>(supabase.from('water_marks').select('id,name,geojson,levels')),
@@ -29,6 +29,8 @@ export async function fetchSnapshot(): Promise<Snapshot> {
         return { rows: (data ?? []) as ReportRow[], count: count ?? null };
       })(),
       q<ReportRow[]>(supabase.from('reports_public').select('*').eq('kind', 'general').order('created_at', { ascending: false }).limit(FEED_LIMIT)),
+      q<ReportRow[]>(supabase.from('reports_public').select('*').eq('kind', 'general').eq('by_committee', true).in('target_id', ['wall', 'drainage'])
+        .order('created_at', { ascending: false }).limit(COMMITTEE_NOTES_LIMIT)),
       settledOrEmpty(q<any[]>(supabase.from('agency_latest').select('*'))),
       settledOrEmpty(q<any[]>(supabase.from('agency_recent').select('*'))),
       settledOrEmpty(q<any[]>(supabase.from('agency_warnings').select('*').order('issued_at', { ascending: false }).limit(20))),
@@ -38,13 +40,13 @@ export async function fetchSnapshot(): Promise<Snapshot> {
 
   const clientNow = Date.now();
   const serverOffsetMs = computeServerOffset(serverTime, clientNow);
-  const merged = mergeReportRows({ status: statusRes.rows, statusCount: statusRes.count, general });
-  const mapped = merged.rows.map((r) => mapReportRow(r, mediaUrl));
+  const merged = mergeReportRows({ status: statusRes.rows, statusCount: statusRes.count, general, committee: committeeNotes });
+  const toReport = (r: ReportRow) => mapReportRow(r, mediaUrl);
   return {
     segments, marks, places, destinations,
     routes: routes.map((r): RouteDef => ({ id: r.id, name: r.name, destinationId: r.destination_id, segmentIds: r.segment_ids, waypoints: r.waypoints ?? [], distanceM: r.distance_m })),
     settings: parseSettings(settings),
-    reports: mapped.map((m) => m.report), feed: mapped.slice(0, FEED_LIMIT).map((m) => m.feed),
+    reports: merged.rows.map((r) => toReport(r).report), feed: merged.feedRows.map((r) => toReport(r).feed),
     statusTruncated: merged.statusTruncated,
     latest: latest.map(mapReading), recent: recent.map(mapReading),
     warnings: warnings.map((w): WarningRow => ({ id: w.id, title: w.title, body: w.body, url: w.url, issuedAt: Date.parse(w.issued_at), mentionsBangkok: w.mentions_bangkok })),

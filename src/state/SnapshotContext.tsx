@@ -51,3 +51,8 @@ export function useData(): Ctx {
   if (!ctx) throw new Error('useData must be used inside <SnapshotProvider>');
   return ctx;
 }
+
+/** Like useData, but null outside <SnapshotProvider> (for app chrome that must never crash the shell). */
+export function useOptionalData(): Ctx | null {
+  return useContext(DataContext);
+}

@@ -6,7 +6,6 @@ import { agencyView, committeeNote, visibleWarnings } from '../../state/agencyVi
 import { derive } from '../../state/derive';
 import { useData } from '../../state/SnapshotContext';
 import { AgeLabel } from '../components/AgeLabel';
-import { TruncatedBanner } from '../components/TruncatedBanner';
 import { FeedItemCard } from '../components/FeedItemCard';
 import { GaugeCard } from '../components/GaugeCard';
 import { RainCard } from '../components/RainCard';
@@ -30,7 +29,6 @@ export function HomePage() {
   return (
     <div className="page">
       <h1>พอร์ทัลน้ำท่วมหมู่บ้าน</h1>
-      <TruncatedBanner truncated={snap.statusTruncated !== false} />
 
       <section className="card">
         <strong>กรรมการหมู่บ้านแจ้ง</strong>

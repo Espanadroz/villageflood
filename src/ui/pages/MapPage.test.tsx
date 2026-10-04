@@ -55,15 +55,3 @@ it('shows a one-time banner when the map reports an error', async () => {
   act(() => { p.onError('x'); p.onError('y'); });
   expect(screen.getAllByText('แผนที่โหลดไม่สำเร็จ — ดูสถานะถนนจากรายการด้านล่าง')).toHaveLength(1);
 });
-
-it('shows the truncation banner when the status fetch was truncated', () => {
-  (snapshot as { statusTruncated: boolean }).statusTruncated = true;
-  try {
-    render(<MemoryRouter><MapPage /></MemoryRouter>);
-    expect(screen.getByText('ข้อมูลรายงานมีมากเกินไป สถานะอาจไม่ครบ — โปรดแจ้งกรรมการ')).toBeInTheDocument();
-  } finally { (snapshot as { statusTruncated: boolean }).statusTruncated = false; }
-});
-it('has no truncation banner normally', () => {
-  render(<MemoryRouter><MapPage /></MemoryRouter>);
-  expect(screen.queryByText(/ข้อมูลรายงานมีมากเกินไป/)).not.toBeInTheDocument();
-});

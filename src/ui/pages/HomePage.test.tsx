@@ -40,12 +40,16 @@ it('shows the conflict note and the higher level', () => {
   expect(markLine()).toHaveTextContent('ขีดที่ 2');
   expect(markLine()).toHaveTextContent('มีรายงานขัดแย้ง');
 });
-it('shows the truncation banner only when the status fetch was truncated', () => {
-  snapshot = base({ statusTruncated: true });
-  const { unmount } = open();
-  expect(screen.getByText('ข้อมูลรายงานมีมากเกินไป สถานะอาจไม่ครบ — โปรดแจ้งกรรมการ')).toBeInTheDocument();
-  unmount();
-  snapshot = base({ statusTruncated: false });
+it('shows the committee wall note even when it is older than the 200 newest feed items', async () => {
+  const { mergeReportRows } = await import('../../data/reportRows');
+  const { mapReportRow } = await import('../../data/mappers');
+  const iso = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString();
+  const row = (id: string, kind: string, minAgo: number, o: object = {}) => ({ id, kind, target_id: 'village', value: kind === 'general' ? 'note' : 'impassable', nickname: 'n', created_at: iso(minAgo),
+    location_ok: true, media_path: null, media_type: null, note: 'x', by_committee: false, confirmed_by_committee: false, confirmations: 0, ...o });
+  const wall = row('wall', 'general', 300, { target_id: 'wall', by_committee: true, note: 'กำแพงยังแข็งแรง' });
+  const spam = Array.from({ length: 200 }, (_, i) => row(`g${i}`, 'general', i * 0.1));
+  const merged = mergeReportRows({ status: [], statusCount: 0, general: spam, committee: [wall] });
+  snapshot = base({ feed: merged.feedRows.map((r) => mapReportRow(r, (p) => p).feed) as never });
   open();
-  expect(screen.queryByText(/ข้อมูลรายงานมีมากเกินไป/)).not.toBeInTheDocument();
+  expect(screen.getByText(/กำแพงยังแข็งแรง/)).toBeInTheDocument();
 });
