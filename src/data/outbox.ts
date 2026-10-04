@@ -14,8 +14,40 @@ export function createOutbox(deps: { store: KV; send: (item: OutboxItem) => Prom
   };
 
   let inflightPromise: Promise<{ sent: number; failed: number; stoppedOnRetry: boolean }> | null = null;
+  let dirty = false;
 
-  return {
+  const doFlush = async (): Promise<{ sent: number; failed: number; stoppedOnRetry: boolean }> => {
+    try {
+      const result = { sent: 0, failed: 0, stoppedOnRetry: false };
+      for (const item of await box.pending()) {
+        try {
+          await send(item);
+          await store.del(PENDING + item.id);
+          result.sent++;
+        } catch (e) {
+          const err = e instanceof SubmitError ? e : new SubmitError((e as Error).message, false);
+          if (err.retryable) {
+            await store.set(PENDING + item.id, { ...item, attempts: item.attempts + 1 });
+            result.stoppedOnRetry = true;
+            break;
+          }
+          await store.set(FAILED + item.id, { item, reason: err.message } satisfies FailedItem);
+          await store.del(PENDING + item.id);
+          result.failed++;
+        }
+      }
+      // If dirty flag was set during this run, queue another run
+      if (dirty) {
+        dirty = false;
+        return { ...result, ...await doFlush() };
+      }
+      return result;
+    } finally {
+      inflightPromise = null;
+    }
+  };
+
+  const box = {
     add: (item: OutboxItem) => store.set(PENDING + item.id, item),
     async pending(): Promise<OutboxItem[]> {
       return (await load<OutboxItem>(PENDING)).sort((a, b) => a.createdAt - b.createdAt);
@@ -30,30 +62,14 @@ export function createOutbox(deps: { store: KV; send: (item: OutboxItem) => Prom
       await store.del(FAILED + id);
     },
     flush(): Promise<{ sent: number; failed: number; stoppedOnRetry: boolean }> {
-      if (inflightPromise) return inflightPromise;
-      inflightPromise = (async () => {
-        const result = { sent: 0, failed: 0, stoppedOnRetry: false };
-        for (const item of await this.pending()) {
-          try {
-            await send(item);
-            await store.del(PENDING + item.id);
-            result.sent++;
-          } catch (e) {
-            const err = e instanceof SubmitError ? e : new SubmitError((e as Error).message, false);
-            if (err.retryable) {
-              await store.set(PENDING + item.id, { ...item, attempts: item.attempts + 1 });
-              result.stoppedOnRetry = true;
-              break;
-            }
-            await store.set(FAILED + item.id, { item, reason: err.message } satisfies FailedItem);
-            await store.del(PENDING + item.id);
-            result.failed++;
-          }
-        }
-        inflightPromise = null;
-        return result;
-      })();
+      if (inflightPromise) {
+        dirty = true;
+        return inflightPromise;
+      }
+      inflightPromise = doFlush();
       return inflightPromise;
     },
   };
+
+  return box;
 }

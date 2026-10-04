@@ -13,21 +13,24 @@ export class SubmitError extends Error {
 
 const PERMANENT = ['evidence_required', 'invalid_value', 'unknown_target', 'device_blocked', 'committee_only', 'nickname_required', 'invalid_media', 'unknown_report', 'not_a_reporter'];
 
-export function classifyUploadError(err: { message: string; statusCode?: string | number }): 'ok-already-exists' | SubmitError {
+export function classifyUploadError(err: { message: string; statusCode?: string | number }): { ok: boolean; error?: SubmitError } {
   const code = typeof err.statusCode === 'string' ? parseInt(err.statusCode) : err.statusCode;
-  if (code === 409 && /already exists|duplicate/i.test(err.message)) return 'ok-already-exists';
-  return classifySubmitError(err.message, code);
+  if (code === 409 && /already exists|duplicate/i.test(err.message)) return { ok: true };
+  return { ok: false, error: classifySubmitError({ message: err.message, status: code }) };
 }
 
-export function classifySubmitError(message: string, statusCode?: string | number): SubmitError {
-  const code = typeof statusCode === 'string' ? parseInt(statusCode) : statusCode;
+export function classifySubmitError(err: { message: string; code?: string; status?: number }): SubmitError {
+  const message = err.message;
+  const status = typeof err.status === 'number' && isFinite(err.status) ? err.status : undefined;
 
-  // Check for 5xx or 429 status codes as retryable
-  if (code && (code >= 500 || code === 429)) {
-    // But if message is exactly/starts with a DB error code, keep it permanent
-    const trimmed = message.trim();
-    const isPermanentDBError = PERMANENT.some((c) => trimmed === c || trimmed.startsWith(c));
-    if (!isPermanentDBError) return new SubmitError(message, true);
+  // If there's a SQLSTATE code (database error), always permanent
+  if (err.code) {
+    return new SubmitError(message, false);
+  }
+
+  // Check for 5xx or 429 status codes as retryable (only when no SQLSTATE code)
+  if (status && (status >= 500 || status === 429)) {
+    return new SubmitError(message, true);
   }
 
   if (PERMANENT.some((c) => message.includes(c))) return new SubmitError(message, false);
@@ -58,9 +61,9 @@ export async function sendItem(item: OutboxItem): Promise<void> {
     mediaPath = `${item.draft.deviceId}/${item.id}.${EXT[item.mediaType] ?? 'bin'}`;
     const res = await supabase.storage.from('evidence').upload(mediaPath, item.blob, { contentType: item.mediaType, upsert: false });
     if (res.error) {
-      const statusCode = ((res.error as unknown as Record<string, unknown>).statusCode as unknown) as string | number | undefined;
-      const uploadErr = classifyUploadError({ message: res.error.message, statusCode });
-      if (uploadErr !== 'ok-already-exists') throw uploadErr;
+      const err = res.error as unknown as { message: string; statusCode?: string | number };
+      const classErr = classifyUploadError({ message: err.message, statusCode: err.statusCode });
+      if (!classErr.ok && classErr.error) throw classErr.error;
     }
   }
   const d = item.draft;
@@ -70,8 +73,7 @@ export async function sendItem(item: OutboxItem): Promise<void> {
     p_client_id: item.id,
   });
   if (res.error) {
-    const err = res.error as unknown as Record<string, unknown>;
-    const statusCode = ((err.code || err.status) as unknown) as string | number | undefined;
-    throw classifySubmitError(res.error.message, statusCode);
+    const err = res.error as unknown as { message: string; code?: string; status?: number };
+    throw classifySubmitError({ message: err.message, code: err.code, status: err.status });
   }
 }
