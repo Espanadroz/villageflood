@@ -13,7 +13,23 @@ export class SubmitError extends Error {
 
 const PERMANENT = ['evidence_required', 'invalid_value', 'unknown_target', 'device_blocked', 'committee_only', 'nickname_required', 'invalid_media', 'unknown_report', 'not_a_reporter'];
 
-export function classifySubmitError(message: string): SubmitError {
+export function classifyUploadError(err: { message: string; statusCode?: string | number }): 'ok-already-exists' | SubmitError {
+  const code = typeof err.statusCode === 'string' ? parseInt(err.statusCode) : err.statusCode;
+  if (code === 409 && /already exists|duplicate/i.test(err.message)) return 'ok-already-exists';
+  return classifySubmitError(err.message, code);
+}
+
+export function classifySubmitError(message: string, statusCode?: string | number): SubmitError {
+  const code = typeof statusCode === 'string' ? parseInt(statusCode) : statusCode;
+
+  // Check for 5xx or 429 status codes as retryable
+  if (code && (code >= 500 || code === 429)) {
+    // But if message is exactly/starts with a DB error code, keep it permanent
+    const trimmed = message.trim();
+    const isPermanentDBError = PERMANENT.some((c) => trimmed === c || trimmed.startsWith(c));
+    if (!isPermanentDBError) return new SubmitError(message, true);
+  }
+
   if (PERMANENT.some((c) => message.includes(c))) return new SubmitError(message, false);
   if (message.includes('rate_limited')) return new SubmitError(message, true);
   if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) return new SubmitError(message, true);
@@ -40,13 +56,22 @@ export async function sendItem(item: OutboxItem): Promise<void> {
   let mediaPath: string | null = null;
   if (item.blob && item.mediaType) {
     mediaPath = `${item.draft.deviceId}/${item.id}.${EXT[item.mediaType] ?? 'bin'}`;
-    const { error } = await supabase.storage.from('evidence').upload(mediaPath, item.blob, { contentType: item.mediaType, upsert: true });
-    if (error) throw classifySubmitError(error.message);
+    const res = await supabase.storage.from('evidence').upload(mediaPath, item.blob, { contentType: item.mediaType, upsert: false });
+    if (res.error) {
+      const statusCode = ((res.error as unknown as Record<string, unknown>).statusCode as unknown) as string | number | undefined;
+      const uploadErr = classifyUploadError({ message: res.error.message, statusCode });
+      if (uploadErr !== 'ok-already-exists') throw uploadErr;
+    }
   }
   const d = item.draft;
-  const { error } = await supabase.rpc('submit_report', {
+  const res = await supabase.rpc('submit_report', {
     p_device: d.deviceId, p_nickname: d.nickname, p_kind: d.kind, p_target: d.targetId, p_value: d.value,
     p_lat: d.lat, p_lng: d.lng, p_media_path: mediaPath, p_media_type: item.mediaType, p_note: d.note,
+    p_client_id: item.id,
   });
-  if (error) throw classifySubmitError(error.message);
+  if (res.error) {
+    const err = res.error as unknown as Record<string, unknown>;
+    const statusCode = ((err.code || err.status) as unknown) as string | number | undefined;
+    throw classifySubmitError(res.error.message, statusCode);
+  }
 }

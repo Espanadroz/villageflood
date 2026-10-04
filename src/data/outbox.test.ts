@@ -37,3 +37,33 @@ it('moves permanently failing items to the failed list and continues', async () 
   await box.dismissFailed('bad');
   expect(await box.failed()).toHaveLength(0);
 });
+it('returns same promise for concurrent flush calls', async () => {
+  const sent: string[] = [];
+  const box = createOutbox({
+    store: memoryKV(),
+    send: async (i) => {
+      sent.push(i.id);
+      await new Promise(r => setTimeout(r, 10));
+    }
+  });
+  await box.add(item('a', 1)); await box.add(item('b', 2));
+  const p1 = box.flush();
+  const p2 = box.flush();
+  expect(p1).toBe(p2);
+  await p1;
+  expect(sent).toEqual(['a', 'b']);
+});
+it('retryFailed moves a failed item back to pending', async () => {
+  const box = createOutbox({
+    store: memoryKV(),
+    send: async (i) => { if (i.id === 'bad') throw new SubmitError('invalid_value', false); },
+  });
+  await box.add(item('bad', 1));
+  await box.flush();
+  expect((await box.failed()).map((f) => f.item.id)).toEqual(['bad']);
+  await box.retryFailed('bad');
+  expect(await box.failed()).toHaveLength(0);
+  const pending = await box.pending();
+  expect(pending.map((p) => p.id)).toEqual(['bad']);
+  expect(pending[0]!.attempts).toBe(0);
+});
