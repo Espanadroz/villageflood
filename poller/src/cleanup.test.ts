@@ -59,9 +59,27 @@ describe('orphan storage objects', () => {
     expect(removed.map((b) => b.length)).toEqual([100, 50]);
     expect(removed.flat()).not.toContain('k/fresh.jpg');
     expect(cleared.flat()).toHaveLength(150);
+    // the row update goes in the URL (?media_path=in.(...)): keep each filter short ("URI too long" on the real gateway)
+    expect(Math.max(...cleared.map((c) => c.length))).toBeLessThanOrEqual(20);
   });
   it('throws when listing fails (so the failure is visible)', async () => {
     const db = { storage: { from: () => ({ list: async () => ({ data: null, error: new Error('list failed') }) }) } };
     await expect(deleteOrphanMedia(db as never, NOW, 30)).rejects.toThrow('list failed');
   });
+});
+
+it('report-linked cleanup clears rows in short URL batches', async () => {
+  const data = Array.from({ length: 120 }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, media_path: `k/${i}.jpg`, created_at: '2026-09-01T00:00:00Z' }));
+  const idBatches: string[][] = [];
+  const q: Record<string, unknown> = {};
+  for (const m of ['select', 'not', 'lt', 'limit']) q[m] = () => q;
+  (q as { then: unknown }).then = (res: (v: unknown) => unknown) => Promise.resolve({ data, error: null }).then(res);
+  const db = {
+    from: () => ({ ...q, update: () => ({ in: async (_c: string, ids: string[]) => { idBatches.push(ids); return { error: null }; } }) }),
+    storage: { from: () => ({ remove: async () => ({ data: [], error: null }) }) },
+  };
+  const { deleteExpiredMedia } = await import('./cleanup');
+  expect(await deleteExpiredMedia(db as never, NOW, 30)).toBe(120);
+  expect(idBatches.flat()).toHaveLength(120);
+  expect(Math.max(...idBatches.map((b) => b.length))).toBeLessThanOrEqual(20);
 });

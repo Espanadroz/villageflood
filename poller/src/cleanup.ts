@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+const PAGE = 100;
+const BATCH = 100;
+const URL_BATCH = 20; // report-row filters travel in the URL; 100 paths exceed the gateway's URI limit
+
 export interface MediaRow { id: string; media_path: string | null; created_at: string }
 
 export function selectExpiredMedia<T extends MediaRow>(rows: T[], now: Date, days: number): T[] {
@@ -15,8 +19,10 @@ export async function deleteExpiredMedia(db: SupabaseClient, now: Date, days: nu
   if (!expired.length) return 0;
   const { error: rmErr } = await db.storage.from('evidence').remove(expired.map((r) => r.media_path!));
   if (rmErr) throw rmErr;
-  const { error: upErr } = await db.from('reports').update({ media_path: null, media_type: null }).in('id', expired.map((r) => r.id));
-  if (upErr) throw upErr;
+  for (const ids of chunk(expired.map((r) => r.id), URL_BATCH)) {
+    const { error: upErr } = await db.from('reports').update({ media_path: null, media_type: null }).in('id', ids);
+    if (upErr) throw upErr;
+  }
   return expired.length;
 }
 
@@ -27,8 +33,6 @@ export interface StorageEntry { name: string; id: string | null; created_at?: st
 export type ListFn = (prefix: string, offset: number, limit: number) => Promise<StorageEntry[]>;
 export interface StoredObject { path: string; created_at: string | null }
 
-const PAGE = 100;
-const BATCH = 100;
 
 export function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -75,8 +79,10 @@ export async function deleteOrphanMedia(db: SupabaseClient, now: Date, days: num
     const { error } = await bucket.remove(batch);
     if (error) throw error;
     // a report still pointing at a removed file loses its evidence (fails closed: passable claims stop counting)
-    const { error: upErr } = await db.from('reports').update({ media_path: null, media_type: null }).in('media_path', batch);
-    if (upErr) throw upErr;
+    for (const part of chunk(batch, URL_BATCH)) {
+      const { error: upErr } = await db.from('reports').update({ media_path: null, media_type: null }).in('media_path', part);
+      if (upErr) throw upErr;
+    }
     removed += batch.length;
   }
   return removed;
