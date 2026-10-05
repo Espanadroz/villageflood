@@ -5,6 +5,7 @@ import { supabase } from '../../data/supabase';
 import { describeSubmitError } from '../../data/submit';
 import { describeFeedItem } from '../../state/describe';
 import { useData } from '../../state/SnapshotContext';
+import { STATUS_COLOR } from '../../core/labels';
 import { AgeLabel } from './AgeLabel';
 
 export function FeedItemCard({ item, snapshot, now }: { item: FeedItem; snapshot: Snapshot; now: number }) {
@@ -24,21 +25,21 @@ export function FeedItemCard({ item, snapshot, now }: { item: FeedItem; snapshot
     } finally { setPending(false); }
   };
   return (
-    <article className="card">
-      <header style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+    <article className="card feed" style={item.kind === 'road' && item.value in STATUS_COLOR ? { borderLeftColor: STATUS_COLOR[item.value as keyof typeof STATUS_COLOR] } : undefined}>
+      <header className="feed__top">
         <strong>{target}</strong><AgeLabel at={item.createdAt} now={now} />
       </header>
-      <p style={{ margin: '4px 0' }}>{valueLabel}{expired && <> <b className="conflict">หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ</b></>}</p>
+      <p>{valueLabel}{expired && <> <b className="conflict">หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ</b></>}</p>
       {item.mediaUrl && (item.mediaType?.startsWith('video')
-        ? <video src={item.mediaUrl} controls playsInline preload="none" style={{ width: '100%', borderRadius: 8 }} />
-        : <a href={item.mediaUrl} target="_blank" rel="noreferrer"><img src={item.mediaUrl} alt={`หลักฐาน ${target}`} loading="lazy" style={{ width: '100%', borderRadius: 8 }} /></a>)}
-      <footer style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 13, marginTop: 6 }}>
+        ? <video className="feed__media" src={item.mediaUrl} controls playsInline preload="none" />
+        : <a href={item.mediaUrl} target="_blank" rel="noreferrer"><img className="feed__media" src={item.mediaUrl} alt={`หลักฐาน ${target}`} loading="lazy" /></a>)}
+      <footer className="feed__meta">
         <span>โดย {item.nickname}</span>
         {item.mediaUrl && <span>· มีรูป/วิดีโอยืนยัน</span>}
-        {(item.byCommittee || item.confirmedByCommittee) && <b>· กรรมการยืนยัน</b>}
+        {(item.byCommittee || item.confirmedByCommittee) && <b className="tag tag--committee">กรรมการยืนยัน</b>}
         {item.confirmations > 0 && <span>· ผู้อื่นยืนยัน ({item.confirmations} คน)</span>}
-        {!item.locationOk && !item.byCommittee && !item.confirmedByCommittee && <span className="conflict">· ตำแหน่งไม่ตรง (ยังไม่มีผลต่อสถานะ)</span>}
-        {item.kind !== 'general' && <button type="button" className="secondary" disabled={pending} aria-label={`ยืนยันรายงาน ${target}`} onClick={confirm} style={{ marginLeft: 'auto', minHeight: 36, padding: '4px 10px' }}>ยืนยัน</button>}
+        {!item.locationOk && !item.byCommittee && !item.confirmedByCommittee && <span className="tag tag--warn">ตำแหน่งไม่ตรง (ยังไม่มีผลต่อสถานะ)</span>}
+        {item.kind !== 'general' && <button type="button" className="secondary" disabled={pending} aria-label={`ยืนยันรายงาน ${target}`} onClick={confirm} style={{ marginLeft: 'auto', minHeight: 40, padding: '4px 14px' }}>ยืนยัน</button>}
       </footer>
       {error && <p role="alert" className="conflict" style={{ margin: '6px 0 0' }}>{error}</p>}
     </article>

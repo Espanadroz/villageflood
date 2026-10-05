@@ -10,7 +10,7 @@ export default defineConfig({
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'],
       manifest: {
         name: 'พอร์ทัลน้ำท่วมหมู่บ้าน', short_name: 'น้ำท่วมหมู่บ้าน', lang: 'th', start_url: '/', display: 'standalone',
-        background_color: '#f5f7fa', theme_color: '#0b5cab',
+        background_color: '#edf1f4', theme_color: '#0b2535',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -25,6 +25,8 @@ export default defineConfig({
         // Never answer API/asset requests with the HTML shell; only extension-less page navigations (/privacy, /map, ...).
         navigateFallbackDenylist: [/^\/assets\//, /^\/(rest|auth|storage|functions|realtime)\//, /\/[^/?]+\.[^/?]+$/],
         runtimeCaching: [],
+        // Self-hosted fonts are part of the shell: without them the app falls back to system fonts when offline.
+        globPatterns: ['**/*.{js,css,html,woff2}'],
         // The lazily loaded map chunk is ~1 MB; precache it so the map survives flaky networks.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },

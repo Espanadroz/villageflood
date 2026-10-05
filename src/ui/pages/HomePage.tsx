@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { STATUS_LABEL_TH } from '../../core/labels';
+import { STATUS_COLOR, STATUS_LABEL_TH } from '../../core/labels';
 import type { SegmentState } from '../../core/types';
 import { agencyView, committeeNote, visibleWarnings } from '../../state/agencyView';
 import { derive } from '../../state/derive';
@@ -11,6 +11,7 @@ import { GaugeCard } from '../components/GaugeCard';
 import { RainCard } from '../components/RainCard';
 import { WarningList } from '../components/WarningList';
 import { WaterMarksCard } from '../components/WaterMarksCard';
+import { IconShield } from '../components/icons';
 
 export function HomePage() {
   const { snapshot: s, now } = useData();
@@ -22,6 +23,8 @@ export function HomePage() {
     Object.values(d.segmentStates).forEach((r) => { c[r.value]++; });
     return c;
   }, [d]);
+  const present = (Object.keys(counts) as SegmentState[]).filter((k) => counts[k]);
+  const total = present.reduce((n, k) => n + counts[k], 0);
   const wall = committeeNote(snap, 'wall', now);
   const drainage = committeeNote(snap, 'drainage', now);
   const maxAge = snap.settings.agencyMaxAgeMs;
@@ -29,29 +32,35 @@ export function HomePage() {
   return (
     <div className="page">
       <h1>พอร์ทัลน้ำท่วมหมู่บ้าน</h1>
-
-      <section className="card">
-        <strong>กรรมการหมู่บ้านแจ้ง</strong>
+      <section className="notice">
+        <div className="notice__h"><IconShield /><strong>กรรมการหมู่บ้านแจ้ง</strong></div>
         {([['กำแพงริมคลอง', wall], ['การระบายน้ำ', drainage]] as const).map(([label, n]) => (
-          <p key={label} style={{ margin: '6px 0' }}>
+          <p key={label}>
             <b>{label}:</b> {n && n.note.trim() ? n.note : 'ยังไม่มีการอัปเดตจากกรรมการ'}{' '}
             {n && n.note.trim() && <AgeLabel at={n.createdAt} now={now} maxAgeMs={n.stale ? 0 : undefined} />}
           </p>
         ))}
       </section>
 
-      <h2>ระดับน้ำคลอง</h2>
+      <h2 className="sect-h">ระดับน้ำคลอง</h2>
       {a.primary ? <GaugeCard g={a.primary} now={now} maxAgeMs={maxAge} big />
         : <section className="card"><strong>คลองสองต้นนุ่น ซ.ร่มเกล้า 20</strong><p className="age">ไม่มีข้อมูลล่าสุดจากหน่วยงาน</p></section>}
-      {a.others.map((g) => <GaugeCard key={g.stationId} g={g} now={now} maxAgeMs={maxAge} />)}
+      {a.others.length > 0 && <div className="group" style={{ margin: '10px 0' }}>{a.others.map((g) => <GaugeCard key={g.stationId} g={g} now={now} maxAgeMs={maxAge} />)}</div>}
       <RainCard rain={a.rain} now={now} maxAgeMs={maxAge} />
       <WarningList warnings={visibleWarnings(snap, now)} now={now} />
       <WaterMarksCard marks={snap.marks} states={d.markStates} now={now} />
 
-      <h2>สรุปถนน <Link to="/map" style={{ fontSize: 14 }}>ดูแผนที่</Link></h2>
-      <p>{(Object.keys(counts) as SegmentState[]).filter((k) => counts[k]).map((k) => `${STATUS_LABEL_TH[k]} ${counts[k]}`).join(' · ') || 'ยังไม่มีช่วงถนนในระบบ'}</p>
+      <h2 className="sect-h">สรุปถนน <Link to="/map" className="sect-h__link">ดูแผนที่</Link></h2>
+      <section className="card">
+        {total > 0 && (
+          <div className="bar" aria-hidden="true">
+            {present.map((k) => <span key={k} style={{ flex: counts[k], background: STATUS_COLOR[k] }} />)}
+          </div>
+        )}
+        <p style={{ marginTop: total > 0 ? 10 : 0 }}>{present.map((k) => `${STATUS_LABEL_TH[k]} ${counts[k]}`).join(' · ') || 'ยังไม่มีช่วงถนนในระบบ'}</p>
+      </section>
 
-      <h2>รายงานล่าสุด</h2>
+      <h2 className="sect-h">รายงานล่าสุด</h2>
       {snap.feed.length === 0 && <p>ยังไม่มีรายงานใน 7 วันที่ผ่านมา</p>}
       {snap.feed.slice(0, 20).map((f) => <FeedItemCard key={f.id} item={f} snapshot={snap} now={now} />)}
     </div>
