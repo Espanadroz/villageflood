@@ -22,8 +22,10 @@ export const FRESH_CAPTURE_MAX_AGE_MS = 5 * MINUTE; // file.lastModified must be
 export const GOOGLE_MAPS_MAX_WAYPOINTS = 3;
 
 export const DISCLAIMER_TH = 'ข้อมูลชุมชน ไม่ใช่ประกาศเตือนภัยทางการ';
+export const OSM_CREDIT_TH = 'ตำแหน่งร้านและปั๊มเบื้องต้น: © ผู้ร่วมจัดทำ OpenStreetMap (ODbL) — ข้อมูลอาจไม่ตรงกับความเป็นจริง สถานะเปิด/ปิดมาจากรายงานของลูกบ้านเท่านั้น';
 export const LONGDO_CREDIT_TH = 'ข้อมูลเหตุการณ์: iTIC / Longdo Traffic (CC-BY 4.0)';
 
 /** Placeholder = gauge WL.STN.02. Committee replaces it with the village gate coordinates in Task 14 seed. */
-export const VILLAGE_CENTER = { lat: 13.7771, lng: 100.73883 } as const;
+// Perfect Place Wongwaen-Ramkhamhaeng (geocoded from OSM). Confirm the exact village gate with the committee and set it in the admin board.
+export const VILLAGE_CENTER = { lat: 13.76548, lng: 100.71419 } as const;
 export const PRIMARY_GAUGE = 'WL.STN.02';

@@ -59,9 +59,13 @@ rows.forEach((row, i) => {
 if (failed) die(`ตรวจไม่ผ่าน ${failed}/${rows.length} แถว — ไม่ได้อัปโหลดอะไรเลย`);
 
 // Report rows whose id already exists (upsert would overwrite them).
-const { data: existing, error: exErr } = await db.from(table).select('id').in('id', rows.map((r) => r.id));
-if (exErr) die(`ตรวจ id ที่มีอยู่ไม่ได้: ${exErr.message}`);
-const existingIds = existing.map((r) => r.id);
+// Chunked: a long .in() list overflows the request URL (HTTP 414) at a few hundred ids.
+const existingIds = [];
+for (let i = 0; i < rows.length; i += 100) {
+  const { data: existing, error: exErr } = await db.from(table).select('id').in('id', rows.slice(i, i + 100).map((r) => r.id));
+  if (exErr) die(`ตรวจ id ที่มีอยู่ไม่ได้: ${exErr.message}`);
+  existingIds.push(...existing.map((r) => r.id));
+}
 console.log(`id ที่มีอยู่แล้วในฐานข้อมูล: ${existingIds.length}/${rows.length}${existingIds.length ? ` (${existingIds.join(', ')})` : ''}`);
 if (existingIds.length && !flags.has('--allow-overwrite')) die('จะเขียนทับรายการเดิม — ไม่ได้อัปโหลด. ถ้าตั้งใจ ให้เพิ่ม --allow-overwrite');
 

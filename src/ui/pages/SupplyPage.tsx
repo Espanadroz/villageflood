@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { OSM_CREDIT_TH } from '../../core/config';
 import { buildGoogleMapsSearchUrl } from '../../core/routes';
 import { SUPPLY_LABEL_TH } from '../../core/labels';
 import type { PlaceCategory } from '../../data/types';
@@ -47,6 +48,7 @@ export function SupplyPage() {
         );
       })}
       </div>
+      {views.length > 0 && <p className="age" style={{ marginTop: 16 }}>{OSM_CREDIT_TH}</p>}
     </div>
   );
 }
