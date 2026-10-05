@@ -11,7 +11,7 @@ import { GaugeCard } from '../components/GaugeCard';
 import { RainCard } from '../components/RainCard';
 import { WarningList } from '../components/WarningList';
 import { WaterMarksCard } from '../components/WaterMarksCard';
-import { IconShield } from '../components/icons';
+import { IconCamera, IconDroplet, IconMessage, IconRoad, IconShield } from '../components/icons';
 
 export function HomePage() {
   const { snapshot: s, now } = useData();
@@ -30,8 +30,10 @@ export function HomePage() {
   const maxAge = snap.settings.agencyMaxAgeMs;
 
   return (
-    <div className="page">
+    <div className="page page--wide">
       <h1>พอร์ทัลน้ำท่วมหมู่บ้าน</h1>
+      <div className="split">
+      <div className="split__main">
       <section className="notice">
         <div className="notice__h"><IconShield /><strong>กรรมการหมู่บ้านแจ้ง</strong></div>
         {([['กำแพงริมคลอง', wall], ['การระบายน้ำ', drainage]] as const).map(([label, n]) => (
@@ -42,15 +44,16 @@ export function HomePage() {
         ))}
       </section>
 
-      <h2 className="sect-h">ระดับน้ำคลอง</h2>
+      <h2 className="sect-h"><IconDroplet />ระดับน้ำคลอง</h2>
       {a.primary ? <GaugeCard g={a.primary} now={now} maxAgeMs={maxAge} big />
         : <section className="card"><strong>คลองสองต้นนุ่น ซ.ร่มเกล้า 20</strong><p className="age">ไม่มีข้อมูลล่าสุดจากหน่วยงาน</p></section>}
       {a.others.length > 0 && <div className="group" style={{ margin: '10px 0' }}>{a.others.map((g) => <GaugeCard key={g.stationId} g={g} now={now} maxAgeMs={maxAge} />)}</div>}
       <RainCard rain={a.rain} now={now} maxAgeMs={maxAge} />
       <WarningList warnings={visibleWarnings(snap, now)} now={now} />
       <WaterMarksCard marks={snap.marks} states={d.markStates} now={now} />
-
-      <h2 className="sect-h">สรุปถนน <Link to="/map" className="sect-h__link">ดูแผนที่</Link></h2>
+      </div>
+      <div className="split__side">
+      <h2 className="sect-h"><IconRoad />สรุปถนน <Link to="/map" className="sect-h__link">ดูแผนที่</Link></h2>
       <section className="card">
         {total > 0 && (
           <div className="bar" aria-hidden="true">
@@ -60,9 +63,17 @@ export function HomePage() {
         <p style={{ marginTop: total > 0 ? 10 : 0 }}>{present.map((k) => `${STATUS_LABEL_TH[k]} ${counts[k]}`).join(' · ') || 'ยังไม่มีช่วงถนนในระบบ'}</p>
       </section>
 
-      <h2 className="sect-h">รายงานล่าสุด</h2>
-      {snap.feed.length === 0 && <p>ยังไม่มีรายงานใน 7 วันที่ผ่านมา</p>}
+      <h2 className="sect-h"><IconMessage />รายงานล่าสุด</h2>
+      {snap.feed.length === 0 && (
+        <div className="empty">
+          <span className="empty__ico"><IconCamera /></span>
+          <p>ยังไม่มีรายงานใน 7 วันที่ผ่านมา</p>
+          <Link className="btn" to="/report"><IconCamera />เป็นคนแรกที่รายงาน</Link>
+        </div>
+      )}
       {snap.feed.slice(0, 20).map((f) => <FeedItemCard key={f.id} item={f} snapshot={snap} now={now} />)}
+      </div>
+      </div>
     </div>
   );
 }

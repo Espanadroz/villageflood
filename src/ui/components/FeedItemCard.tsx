@@ -7,6 +7,9 @@ import { describeFeedItem } from '../../state/describe';
 import { useData } from '../../state/SnapshotContext';
 import { STATUS_COLOR } from '../../core/labels';
 import { AgeLabel } from './AgeLabel';
+import { IconCamera, IconDroplet, IconMessage, IconRoad, IconBasket } from './icons';
+
+const KIND_ICON = { road: <IconRoad />, water_level: <IconDroplet />, supply: <IconBasket />, general: <IconMessage /> } as const;
 
 export function FeedItemCard({ item, snapshot, now }: { item: FeedItem; snapshot: Snapshot; now: number }) {
   const { reload } = useData();
@@ -27,7 +30,7 @@ export function FeedItemCard({ item, snapshot, now }: { item: FeedItem; snapshot
   return (
     <article className="card feed" style={item.kind === 'road' && item.value in STATUS_COLOR ? { borderLeftColor: STATUS_COLOR[item.value as keyof typeof STATUS_COLOR] } : undefined}>
       <header className="feed__top">
-        <strong>{target}</strong><AgeLabel at={item.createdAt} now={now} />
+        <strong className="with-ico"><span className="with-ico__badge">{KIND_ICON[item.kind]}</span>{target}</strong><AgeLabel at={item.createdAt} now={now} />
       </header>
       <p>{valueLabel}{expired && <> <b className="conflict">หมดอายุแล้ว — ไม่ใช้ตัดสินสถานะ</b></>}</p>
       {item.mediaUrl && (item.mediaType?.startsWith('video')
@@ -35,7 +38,7 @@ export function FeedItemCard({ item, snapshot, now }: { item: FeedItem; snapshot
         : <a href={item.mediaUrl} target="_blank" rel="noreferrer"><img className="feed__media" src={item.mediaUrl} alt={`หลักฐาน ${target}`} loading="lazy" /></a>)}
       <footer className="feed__meta">
         <span>โดย {item.nickname}</span>
-        {item.mediaUrl && <span>· มีรูป/วิดีโอยืนยัน</span>}
+        {item.mediaUrl && <span className="with-ico"><IconCamera />มีรูป/วิดีโอยืนยัน</span>}
         {(item.byCommittee || item.confirmedByCommittee) && <b className="tag tag--committee">กรรมการยืนยัน</b>}
         {item.confirmations > 0 && <span>· ผู้อื่นยืนยัน ({item.confirmations} คน)</span>}
         {!item.locationOk && !item.byCommittee && !item.confirmedByCommittee && <span className="tag tag--warn">ตำแหน่งไม่ตรง (ยังไม่มีผลต่อสถานะ)</span>}

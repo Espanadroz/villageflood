@@ -18,7 +18,7 @@ interface Props {
   onSelectSegment?: (id: string) => void; onError?: (message: string) => void; onHealthy?: () => void;
 }
 
-export function MapView({ segments, states, highlightIds, places = [], incidents = [], center, zoom = 14, height = '55dvh', onSelectSegment, onError, onHealthy }: Props) {
+export function MapView({ segments, states, highlightIds, places = [], incidents = [], center, zoom = 14, height = 'var(--map-h, 55dvh)', onSelectSegment, onError, onHealthy }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const readyFor = useRef<MapLibreMap | null>(null); // the map instance whose layers are ready

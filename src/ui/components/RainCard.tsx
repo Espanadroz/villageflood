@@ -1,5 +1,6 @@
 import type { RainCell, RainView } from '../../state/agencyView';
 import { AgeLabel } from './AgeLabel';
+import { IconCloudRain } from './icons';
 import { sourceLabelTh } from './sources';
 
 const UNIT_FALLBACK = 'หน่วยตามที่หน่วยงานรายงาน';
@@ -16,12 +17,12 @@ function Cell({ c, now, maxAgeMs }: { c: RainCell | null; now: number; maxAgeMs:
 }
 
 export function RainCard({ rain, now, maxAgeMs }: { rain: RainView[]; now: number; maxAgeMs: number }) {
-  if (!rain.length) return <section className="card"><strong>ฝน</strong><p className="age">ไม่มีข้อมูลล่าสุดจากสถานีใกล้เคียง</p></section>;
+  if (!rain.length) return <section className="card"><strong className="with-ico"><IconCloudRain />ฝน</strong><p className="age">ไม่มีข้อมูลล่าสุดจากสถานีใกล้เคียง</p></section>;
   const units = new Set(rain.map((r) => r.unit));
   const unit = units.size === 1 ? [...units][0] : null;
   return (
     <section className="card">
-      <strong>ฝนสถานีใกล้เคียง ({unit ?? UNIT_FALLBACK})</strong> <span className="source">ที่มา: {sourceLabelTh('bma_rain')}</span>
+      <strong className="with-ico"><IconCloudRain />ฝนสถานีใกล้เคียง ({unit ?? UNIT_FALLBACK})</strong> <span className="source">ที่มา: {sourceLabelTh('bma_rain')}</span>
       <table className="raintable">
         <thead><tr><th>สถานี</th><th>1 ชม.</th><th>24 ชม.</th></tr></thead>
         <tbody>{rain.map((r) => (

@@ -8,7 +8,7 @@ import { SettingsForm } from '../components/admin/SettingsForm';
 export function AdminPage() {
   const { snapshot, reload, now } = useData();
   return (
-    <div className="page">
+    <div className="page page--wide admin">
       <h1>กระดานกรรมการ</h1>
       <AuthGate>
         {(c) => (

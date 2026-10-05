@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { requiresEvidence } from '../../core/evidence';
 import { STATUS_LABEL_TH, SUPPLY_LABEL_TH } from '../../core/labels';
@@ -13,8 +13,11 @@ import { useOutboxStatus } from '../../state/OutboxContext';
 import { useData } from '../../state/SnapshotContext';
 import { ConsentGate } from '../components/ConsentGate';
 import { EvidenceCapture, type Captured } from '../components/EvidenceCapture';
+import { IconBan, IconBasket, IconCar, IconCheck, IconDroplet, IconMessage, IconPin, IconRoad, IconSend, IconTruck } from '../components/icons';
 
 const KINDS: [ReportKind, string][] = [['road', 'สภาพถนน'], ['water_level', 'ระดับน้ำ'], ['supply', 'จุดเสบียง'], ['general', 'ข้อความทั่วไป']];
+const KIND_ICON: Record<ReportKind, ReactNode> = { road: <IconRoad />, water_level: <IconDroplet />, supply: <IconBasket />, general: <IconMessage /> };
+const ROAD_ICON: Record<string, ReactNode> = { dry: <IconCheck />, small_car: <IconCar />, high_clearance: <IconTruck />, impassable: <IconBan /> };
 const ROAD_VALUES = ['dry', 'small_car', 'high_clearance', 'impassable'] as const;
 const SAVED_MSG = 'ยังส่งไม่สำเร็จ — เก็บรายงานไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติเมื่อเชื่อมต่อได้';
 const SUPPLY_VALUES = ['open', 'closed', 'out_of_stock', 'unreachable'] as const;
@@ -23,7 +26,7 @@ const LOCATION_HOLD_MS = 8000;
 
 export function ReportPage() {
   return (
-    <div className="page">
+    <div className="page page--form">
       <h1>ส่งรายงาน</h1>
       <ConsentGate><ReportForm /></ConsentGate>
     </div>
@@ -94,21 +97,21 @@ function ReportForm() {
     }
   }
 
-  if (done) return <div className="card"><p>{done}</p><button onClick={() => { setDone(null); setValue(''); setEvidence(null); setNote(''); }}>รายงานเพิ่ม</button></div>;
+  if (done) return <div className="card done"><span className="done__ico"><IconCheck /></span><p>{done}</p><button onClick={() => { setDone(null); setValue(''); setEvidence(null); setNote(''); }}>รายงานเพิ่ม</button></div>;
 
   return (
     <>
         <div className="card">
           <strong>ประเภท</strong>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          <div className="chiprow">
             {KINDS.map(([k, label]) => (
-              <button key={k} type="button" className={k === kind ? '' : 'secondary'} onClick={() => { setKind(k); setTargetId(''); setValue(''); setEvidence(null); }}>{label}</button>
+              <button key={k} type="button" className={k === kind ? '' : 'secondary'} onClick={() => { setKind(k); setTargetId(''); setValue(''); setEvidence(null); }}>{KIND_ICON[k]}{label}</button>
             ))}
           </div>
         </div>
         {kind !== 'general' && (
           <div className="card">
-            <label>จุดที่รายงาน
+            <label className="field"><span className="with-ico"><IconPin />จุดที่รายงาน</span>
               <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setValue(''); }} style={{ width: '100%', minHeight: 44 }}>
                 <option value="">— เลือก —</option>
                 {targets.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -120,21 +123,21 @@ function ReportForm() {
           {kind === 'general'
             ? <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} style={{ width: '100%' }} placeholder="พิมพ์ข้อความ" />
             : values.map((o) => (
-              <label key={o.v} style={{ display: 'block', padding: '8px 0' }}>
-                <input type="radio" name="value" checked={value === o.v} onChange={() => setValue(o.v)} /> {o.label}
+              <label key={o.v} className="opt">
+                <input type="radio" name="value" checked={value === o.v} onChange={() => setValue(o.v)} />{kind === 'road' && <span className="opt__ico">{ROAD_ICON[o.v]}</span>}{o.label}
               </label>))}
         </fieldset>
         {kind !== 'general' && <EvidenceCapture key={kind} required={evidenceRequired} onChange={setEvidence} />}
         <div className="card">
-          <label>ชื่อเล่น <input value={nickname} onChange={(e) => setNick(e.target.value)} maxLength={40} style={{ width: '100%', minHeight: 44 }} /></label>
+          <label className="field"><span>ชื่อเล่น</span><input value={nickname} onChange={(e) => setNick(e.target.value)} maxLength={40} style={{ width: '100%', minHeight: 44 }} /></label>
           <p className="age">
             {pos ? `ได้ตำแหน่งแล้ว (±${Math.round(pos.accuracy)} ม.)`
               : geoError ? 'ไม่ได้ตำแหน่ง — รายงานจะรอกรรมการยืนยันก่อนมีผลต่อสถานะ ' : 'กำลังหาตำแหน่ง… '}
             {!pos && <button type="button" className="secondary" onClick={refresh}>ลองอีกครั้ง</button>}
           </p>
         </div>
-        {errors.length > 0 && <ul role="alert" className="conflict">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
-        <button type="button" disabled={busy} onClick={submit}>ส่งรายงาน</button>
+        {errors.length > 0 && <ul role="alert" className="conflict errlist">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
+        <button type="button" className="cta" disabled={busy} onClick={submit}><IconSend />ส่งรายงาน</button>
     </>
   );
 }

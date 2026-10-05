@@ -3,6 +3,7 @@ import { formatAgeTh } from '../../core/format';
 import { KIND_LABEL_TH } from '../../core/labels';
 import { describeSubmitError } from '../../data/submit';
 import { useOutboxStatus } from '../../state/OutboxContext';
+import { IconAlert } from './icons';
 
 /** App-wide: queued reports and every report that could not be sent, so nothing a resident reported is hidden. */
 export function OutboxBanner() {
@@ -21,7 +22,7 @@ export function OutboxBanner() {
 
   return (
     <div className="banner banner--warn" role="status">
-      {pendingCount > 0 && <p style={{ margin: 0 }}>มี {pendingCount} รายงานยังไม่ได้ส่ง — จะส่งให้อัตโนมัติเมื่อมีอินเทอร์เน็ต</p>}
+      {pendingCount > 0 && <p style={{ margin: 0 }}><IconAlert />มี {pendingCount} รายงานยังไม่ได้ส่ง — จะส่งให้อัตโนมัติเมื่อมีอินเทอร์เน็ต</p>}
       {failed.length > 0 && (
         <>
           <p style={{ margin: '6px 0 0' }}><b>รายงานที่ส่งไม่สำเร็จ ({failed.length})</b></p>

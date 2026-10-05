@@ -3,7 +3,7 @@ import { DISCLAIMER_TH, MEDIA_RETENTION_DAYS } from '../../core/config';
 // DRAFT — have a person with Thai PDPA knowledge review this text before the village-wide launch.
 export function PrivacyPage() {
   return (
-    <div className="page">
+    <div className="page page--prose">
       <h1>ประกาศความเป็นส่วนตัว</h1>
       <p><b>{DISCLAIMER_TH}</b> ผู้ดูแลเป็นอาสาสมัครของหมู่บ้าน ไม่รับประกันความถูกต้องหรือความต่อเนื่องของข้อมูล หากมีอันตรายต่อชีวิต โปรดโทร 1784 (กทม.) หรือ 191 / 1669</p>
       <h2>ข้อมูลที่เก็บ</h2>

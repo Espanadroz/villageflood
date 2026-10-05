@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS } from '../../core/config';
 import { compressImage, isFreshCapture, readVideoDuration } from '../../lib/media';
 import { InPageCamera } from './InPageCamera';
+import { IconCamera, IconVideo } from './icons';
 
 export interface Captured { blob: Blob; mediaType: string }
 const MODE = import.meta.env.VITE_CAPTURE_MODE ?? 'input-capture';
@@ -41,14 +42,14 @@ export function EvidenceCapture({ required, onChange }: { required: boolean; onC
 
   return (
     <div className="card">
-      <strong>หลักฐาน {required ? <span className="conflict">(จำเป็น)</span> : <span>(ไม่บังคับ)</span>}</strong>
-      <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
+      <strong className="with-ico"><IconCamera />หลักฐาน {required ? <span className="conflict">(จำเป็น)</span> : <span>(ไม่บังคับ)</span>}</strong>
+      <div className="chiprow">
         {MODE === 'in-page' ? (
-          <button type="button" onClick={() => setCamera(true)}>เปิดกล้อง</button>
+          <button type="button" onClick={() => setCamera(true)}><IconCamera />เปิดกล้อง</button>
         ) : (
           <>
-            <button type="button" onClick={() => photoRef.current?.click()}>ถ่ายรูป</button>
-            <button type="button" className="secondary" onClick={() => videoRef.current?.click()}>ถ่ายวิดีโอ</button>
+            <button type="button" onClick={() => photoRef.current?.click()}><IconCamera />ถ่ายรูป</button>
+            <button type="button" className="secondary" onClick={() => videoRef.current?.click()}><IconVideo />ถ่ายวิดีโอ</button>
           </>
         )}
       </div>

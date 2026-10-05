@@ -1,12 +1,13 @@
 import type { WarningRow } from '../../data/types';
 import { safeHttpUrl } from '../../lib/url';
 import { AgeLabel } from './AgeLabel';
+import { IconMegaphone } from './icons';
 
 export function WarningList({ warnings, now }: { warnings: WarningRow[]; now: number }) {
   if (!warnings.length) return null;
   return (
     <section>
-      <h2 className="sect-h">ประกาศจากกรมอุตุนิยมวิทยา</h2>
+      <h2 className="sect-h"><IconMegaphone />ประกาศจากกรมอุตุนิยมวิทยา</h2>
       {warnings.slice(0, 3).map((w) => (
         <details key={w.id} className="card" open={w.mentionsBangkok}>
           <summary><strong>{w.title}</strong> {w.mentionsBangkok && <span className="badge" style={{ background: '#b3261e' }}>กล่าวถึงกรุงเทพฯ</span>} <AgeLabel at={w.issuedAt} now={now} /></summary>

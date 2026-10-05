@@ -6,6 +6,7 @@ import { recommended, routeViews, type RouteView } from '../../state/routeViews'
 import { useData } from '../../state/SnapshotContext';
 import { AgeLabel } from '../components/AgeLabel';
 import { Legend } from '../components/Legend';
+import { IconBan, IconCar, IconCheck, IconExternal, IconHelp, IconMap, IconTruck } from '../components/icons';
 import { MapView } from '../map/MapView';
 import { formatTtlTh, googleMapsLinkFor } from './routesHelpers';
 
@@ -14,6 +15,8 @@ const loadVehicle = (): VehicleClass => { try { return localStorage.getItem(VEHI
 
 const STATE_TEXT = { ok: 'ไปได้ (ตามรายงานล่าสุด)', unknown: 'ไม่ทราบ — ยังไม่มีข้อมูลบางช่วง', blocked: 'ไปไม่ได้' } as const;
 const STATE_COLOR = { ok: '#1a9850', unknown: '#8a8f98', blocked: '#d73027' } as const;
+const STATE_ICON = { ok: <IconCheck />, unknown: <IconHelp />, blocked: <IconBan /> } as const;
+const VEHICLE_ICON = { small_car: <IconCar />, high_clearance: <IconTruck /> } as const;
 const EMPTY: never[] = [];
 
 export function RoutesPage() {
@@ -37,18 +40,18 @@ export function RoutesPage() {
     const url = isOpen ? googleMapsLinkFor(v, snap.settings.origin) : null;
     const coordsBad = isOpen && v.status.state === 'ok' && !url;
     return (
-      <article key={v.route.id} className="card" style={{ borderLeft: `6px solid ${STATE_COLOR[v.status.state]}` }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <article key={v.route.id} className={`card route${isOpen ? ' route--open' : ''}`} style={{ borderLeftColor: STATE_COLOR[v.status.state] }}>
+        <header className="route__top">
           <strong>{v.route.name}{best?.route.id === v.route.id ? ' ★ แนะนำ' : ''}</strong>
           <span>{(v.route.distanceM / 1000).toFixed(1)} กม.</span>
         </header>
-        <p style={{ margin: '4px 0', fontWeight: 700 }}>{v.destination?.name} · {STATE_TEXT[v.status.state]} สำหรับ{VEHICLE_LABEL_TH[vehicle]}{v.status.hasConflict && ' · มีรายงานขัดแย้ง'}</p>
+        <p className="route__state"><span className="route__ico" style={{ color: STATE_COLOR[v.status.state] }}>{STATE_ICON[v.status.state]}</span>{v.destination?.name} · {STATE_TEXT[v.status.state]} สำหรับ{VEHICLE_LABEL_TH[vehicle]}{v.status.hasConflict && ' · มีรายงานขัดแย้ง'}</p>
         {v.blockedNames.length > 0 && <p className="conflict">ติดที่: {v.blockedNames.join(', ')}</p>}
         {v.unknownNames.length > 0 && <p className="age">ไม่มีข้อมูล: {v.unknownNames.join(', ')} (ห้ามถือว่าผ่านได้)</p>}
         {v.status.state === 'ok'
           ? <p className="age">ไปได้ตามรายงานที่ไม่เก่าเกิน {formatTtlTh(snap.settings.ttlMs.road)} (เก่าที่สุดในเส้นนี้: <AgeLabel at={v.status.oldestAsOf} now={now} />)</p>
           : <p className="age">ช่วงที่เก่าที่สุดในเส้นนี้: <AgeLabel at={v.status.oldestAsOf} now={now} /></p>}
-        <button type="button" className="secondary" aria-expanded={isOpen} onClick={() => setOpen(open === v.route.id ? null : v.route.id)}>{isOpen ? 'ซ่อนแผนที่' : 'ดูบนแผนที่'}</button>
+        <button type="button" className="secondary" aria-expanded={isOpen} onClick={() => setOpen(open === v.route.id ? null : v.route.id)}><IconMap />{isOpen ? 'ซ่อนแผนที่' : 'ดูบนแผนที่'}</button>
         {isOpen && (
           <div style={{ marginTop: 8 }}>
             <MapView segments={snap.segments} states={d.segmentStates} highlightIds={highlightIds} center={snap.settings.origin} zoom={13} height="45dvh"
@@ -58,7 +61,7 @@ export function RoutesPage() {
             {url && (
               <>
                 <p className="age">Google Maps อาจพาไปทางอื่นที่ไม่ใช่เส้นนี้ — ดูเส้นบนแผนที่ในแอปเป็นหลักเสมอ</p>
-                <a className="btn" href={url} target="_blank" rel="noreferrer noopener">เปิดนำทางใน Google Maps</a>
+                <a className="btn" href={url} target="_blank" rel="noreferrer noopener"><IconExternal />เปิดนำทางใน Google Maps</a>
               </>
             )}
             {coordsBad && <p className="conflict">ข้อมูลจุดนำทางของเส้นทางนี้ไม่ถูกต้อง — แจ้งกรรมการ</p>}
@@ -70,20 +73,20 @@ export function RoutesPage() {
   };
 
   return (
-    <div className="page">
+    <div className="page page--wide">
       <h1>เส้นทางออกจากหมู่บ้าน</h1>
-      <div role="group" aria-label="ประเภทรถ" style={{ display: 'flex', gap: 8 }}>
+      <div role="group" aria-label="ประเภทรถ" className="chiprow">
         {(['small_car', 'high_clearance'] as const).map((v) => (
-          <button key={v} type="button" aria-pressed={vehicle === v} className={vehicle === v ? '' : 'secondary'} onClick={() => chooseVehicle(v)}>{VEHICLE_LABEL_TH[v]}</button>
+          <button key={v} type="button" aria-pressed={vehicle === v} className={vehicle === v ? '' : 'secondary'} onClick={() => chooseVehicle(v)}>{VEHICLE_ICON[v]}{VEHICLE_LABEL_TH[v]}</button>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0' }}>
+      <div className="chiprow">
         <button type="button" aria-pressed={dest === null} className={dest === null ? '' : 'secondary'} onClick={() => setDest(null)}>ทั้งหมด</button>
         {snap.destinations.map((x) => <button key={x.id} type="button" aria-pressed={dest === x.id} className={dest === x.id ? '' : 'secondary'} onClick={() => setDest(x.id)}>{x.name}</button>)}
       </div>
       {!best && views.length > 0 && <div className="banner banner--warn">ขณะนี้ยังไม่มีเส้นทางที่ยืนยันได้ว่าไปได้สำหรับ{VEHICLE_LABEL_TH[vehicle]} — โปรดรายงานสภาพถนนช่วยกัน</div>}
       {views.length === 0 && <p>{snap.routes.length === 0 ? 'ยังไม่มีเส้นทางในระบบ' : 'ยังไม่มีเส้นทางไปยังปลายทางนี้'}</p>}
-      {views.map(card)}
+      <div className="cards">{views.map(card)}</div>
     </div>
   );
 }

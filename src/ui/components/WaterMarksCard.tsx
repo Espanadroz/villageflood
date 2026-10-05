@@ -1,12 +1,13 @@
 import type { Resolved } from '../../core/types';
 import type { MarkRow } from '../../data/types';
 import { AgeLabel } from './AgeLabel';
+import { IconRuler } from './icons';
 
 /** Resident-reported level at each wall mark. Expired/unknown => 'ไม่ทราบ'. Text only, no colour reliance. */
 export function WaterMarksCard({ marks, states, now }: { marks: MarkRow[]; states: Record<string, Resolved<string>>; now: number }) {
   return (
     <section className="card marks" aria-labelledby="marks-h">
-      <h2 id="marks-h">ระดับน้ำที่จุดวัด</h2>
+      <h2 id="marks-h" className="sect-h"><IconRuler />ระดับน้ำที่จุดวัด</h2>
       {marks.length === 0 && <p className="age">ยังไม่มีจุดวัดระดับน้ำในระบบ</p>}
       <ul className="marks__list">
         {marks.map((m) => {
