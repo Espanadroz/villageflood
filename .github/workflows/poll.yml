@@ -1,0 +1,28 @@
+# Pulls agency data (BMA canal + rain, ThaiWater, TMD warnings, Longdo incidents) into Supabase and deletes media older than 30 days.
+# Needs two repository secrets: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Settings > Secrets and variables > Actions).
+# Exit code 1 = an agency source failed, 2 = only media cleanup failed: either turns the run red and GitHub emails the repo owner.
+name: poll-agency-data
+on:
+  schedule:
+    - cron: '*/10 * * * *' # best effort: GitHub may delay a run by several minutes under load
+  workflow_dispatch:
+concurrency:
+  group: poll-agency-data
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx poller/src/run.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
